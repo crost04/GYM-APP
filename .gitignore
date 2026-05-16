@@ -1,0 +1,16 @@
+# Datenbank (läuft auf der Cloud neu an)
+*.db
+*.db-shm
+*.db-wal
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Mac
+.DS_Store
+
+# Launcher (nur lokal nötig)
+*.command
