@@ -487,7 +487,7 @@ with tab_verlauf:
                         marker=dict(size=8, color=COLORS["accent_green"],
                                     line=dict(width=2, color=COLORS["bg_secondary"])),
                         fill="tozeroy",
-                        fillcolor=COLORS["accent_green"] + "15",
+                        fillcolor="rgba(57, 255, 20, 0.08)",
                         hovertemplate="<b>%{y} kg</b><br>%{x}<extra></extra>",
                     ))
                     fig.update_layout(
@@ -646,7 +646,7 @@ with tab_gewicht:
                 line=dict(color=COLORS["accent_blue"], width=2.5, shape="spline"),
                 marker=dict(size=7, color=COLORS["accent_blue"],
                             line=dict(width=2, color=COLORS["bg_secondary"])),
-                fill="tozeroy", fillcolor=COLORS["accent_blue"] + "18",
+                fill="tozeroy", fillcolor="rgba(0, 212, 255, 0.09)",
                 hovertemplate="<b>%{y} kg</b><br>%{x}<extra></extra>",
             ))
             fig.update_layout(
