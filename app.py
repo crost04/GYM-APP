@@ -577,204 +577,302 @@ with tab_verlauf:
 # ╚══════════════════════════════════════════════════════════════════════════╝
 
 with tab_gewicht:
+    import pandas as _pd
     from datetime import timedelta as _td
 
-    st.markdown(f"""
-    <div style="color:{COLORS['text_secondary']};font-size:0.8rem;font-weight:700;
-                text-transform:uppercase;letter-spacing:0.08em;margin-bottom:14px;">
-        Körpergewicht tracken
-    </div>
-    """, unsafe_allow_html=True)
-
-    # ── Gewicht eintragen ──────────────────────────────────────────────────
+    # ── SECTION 1: Eingabe-Formular ────────────────────────────────────────
     latest, previous = db.get_last_two_weights()
     default_weight   = latest["weight_kg"] if latest else 80.0
+    saved_goal       = db.get_setting("goal_weight")
+    default_goal     = float(saved_goal) if saved_goal else 75.0
 
-    col_w, col_g = st.columns(2)
-    with col_w:
-        body_weight_input = st.number_input(
-            "GEWICHT (KG)",
-            min_value=20.0, max_value=300.0,
-            value=default_weight, step=0.1, format="%.1f",
-            key="body_weight_input",
+    with st.form("weight_form", clear_on_submit=False):
+        st.markdown(f"""
+        <div style="color:{COLORS['text_secondary']};font-size:0.75rem;font-weight:700;
+                    text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">
+            ⚖️ Heutiges Gewicht eintragen
+        </div>
+        """, unsafe_allow_html=True)
+
+        col_w, col_g = st.columns(2)
+        with col_w:
+            body_weight_input = st.number_input(
+                "GEWICHT (KG)",
+                min_value=20.0, max_value=300.0,
+                value=default_weight, step=0.1, format="%.1f",
+            )
+        with col_g:
+            goal_weight_input = st.number_input(
+                "ZIELGEWICHT (KG)",
+                min_value=20.0, max_value=300.0,
+                value=default_goal, step=0.1, format="%.1f",
+            )
+
+        submitted = st.form_submit_button(
+            "💾 ÄNDERUNGEN SPEICHERN",
+            use_container_width=True,
         )
-    with col_g:
-        saved_goal = db.get_setting("goal_weight")
-        default_goal = float(saved_goal) if saved_goal else 75.0
-        goal_weight = st.number_input(
-            "ZIELGEWICHT (KG)",
-            min_value=20.0, max_value=300.0,
-            value=default_goal, step=0.1, format="%.1f",
-            key="goal_weight_input",
-        )
 
-    col_btn1, col_btn2 = st.columns(2)
-    with col_btn1:
-        if st.button("📊 GEWICHT SPEICHERN", key="save_weight_btn", use_container_width=True):
-            db.log_body_weight(body_weight_input)
-            st.success("Eingetragen! 💪")
-            st.rerun()
-    with col_btn2:
-        if st.button("🎯 ZIEL SPEICHERN", key="save_goal_btn", use_container_width=True):
-            db.set_setting("goal_weight", str(goal_weight))
-            st.success(f"Ziel: {goal_weight} kg gespeichert!")
-            st.rerun()
+    if submitted:
+        db.log_body_weight(body_weight_input)
+        db.set_setting("goal_weight", str(goal_weight_input))
+        st.success("Gespeichert! Weiter so! 🔥")
+        st.rerun()
 
-    st.markdown(f'<div style="height:1px;background:{COLORS["border"]};margin:16px 0;"></div>',
-                unsafe_allow_html=True)
+    st.markdown("---")
 
-    # ── Aktuelle Werte ─────────────────────────────────────────────────────
+    # ── SECTION 2: Metriken & Fortschritt ──────────────────────────────────
     latest, previous = db.get_last_two_weights()
+    saved_goal       = db.get_setting("goal_weight")
+
     if latest:
+        current_kg = latest["weight_kg"]
+        goal_kg    = float(saved_goal) if saved_goal else None
+
+        # st.metric Karten
         col1, col2 = st.columns(2)
         with col1:
-            delta_str = None
+            delta_val = None
             if previous:
-                diff      = round(latest["weight_kg"] - previous["weight_kg"], 1)
-                sign      = "+" if diff > 0 else ""
-                delta_str = f"{sign}{diff} kg"
-            st.metric("Aktuell", f"{latest['weight_kg']} kg",
-                      delta=delta_str, delta_color="inverse",
-                      help=f"vs. {previous['log_date']}" if previous else "")
+                delta_val = round(current_kg - previous["weight_kg"], 1)
+            st.metric(
+                label="⚖️ Aktuell",
+                value=f"{current_kg:.1f} kg",
+                delta=f"{delta_val:+.1f} kg" if delta_val is not None else None,
+                delta_color="inverse",
+                help=f"Letzter Eintrag: {previous['log_date']}" if previous else "",
+            )
         with col2:
-            saved_goal = db.get_setting("goal_weight")
-            if saved_goal:
-                remaining = round(latest["weight_kg"] - float(saved_goal), 1)
-                color = COLORS["accent_green"] if remaining <= 0 else COLORS["accent_orange"]
-                icon  = "🏆" if remaining <= 0 else "🎯"
-                label = "ZIEL ERREICHT!" if remaining <= 0 else f"{abs(remaining)} kg zum Ziel"
+            if goal_kg is not None:
+                remaining = round(current_kg - goal_kg, 1)
+                if remaining <= 0:
+                    st.metric(label="🏆 Zum Ziel", value="ERREICHT!", delta="🎯 Glückwunsch")
+                else:
+                    st.metric(
+                        label="🎯 Zum Ziel",
+                        value=f"{remaining:.1f} kg",
+                        delta=f"Ziel: {goal_kg:.1f} kg",
+                        delta_color="off",
+                    )
+
+        # Fortschrittsbalken
+        if goal_kg is not None:
+            weight_history_prog = db.get_weight_history(weeks=52)
+            if weight_history_prog:
+                start_kg = weight_history_prog[0]["weight_kg"]
+                total_change = abs(start_kg - goal_kg)
+                done_change  = abs(start_kg - current_kg)
+                progress_pct = min(1.0, done_change / total_change) if total_change > 0 else 1.0
+
+                direction_ok = (goal_kg < start_kg and current_kg <= start_kg) or \
+                               (goal_kg > start_kg and current_kg >= start_kg)
+                if not direction_ok:
+                    progress_pct = 0.0
+
                 st.markdown(f"""
-                <div style="background:{COLORS['bg_secondary']};border:1px solid {color}33;
-                            border-radius:16px;padding:16px;text-align:center;">
-                    <div style="font-size:1.3rem;">{icon}</div>
-                    <div style="font-size:0.95rem;font-weight:800;color:{color};margin-top:4px;">
-                        {label}
-                    </div>
-                    <div style="color:{COLORS['text_muted']};font-size:0.72rem;margin-top:2px;">
-                        Ziel: {float(saved_goal):.1f} kg
-                    </div>
+                <div style="color:{COLORS['text_muted']};font-size:0.7rem;font-weight:700;
+                            text-transform:uppercase;letter-spacing:0.07em;
+                            margin-top:12px;margin-bottom:4px;">
+                    Fortschritt zum Ziel
+                    <span style="float:right;color:{COLORS['text_secondary']};">
+                        {int(progress_pct*100)} %
+                    </span>
                 </div>
                 """, unsafe_allow_html=True)
+                st.progress(progress_pct)
 
-    # ── Prognose ───────────────────────────────────────────────────────────
+    st.markdown("---")
+
+    # ── SECTION 3: Chart mit Moving Average ───────────────────────────────
+    weight_history = db.get_weight_history(weeks=16)
+
+    if len(weight_history) >= 1:
+        import plotly.graph_objects as go
+
+        df = _pd.DataFrame(weight_history)
+        df["log_date"] = _pd.to_datetime(df["log_date"])
+        df = df.sort_values("log_date").reset_index(drop=True)
+        df["ma7"] = df["weight_kg"].rolling(window=7, min_periods=1).mean()
+
+        saved_goal = db.get_setting("goal_weight")
+        goal_kg    = float(saved_goal) if saved_goal else None
+
+        dates   = df["log_date"].dt.strftime("%Y-%m-%d").tolist()
+        weights = df["weight_kg"].tolist()
+        ma7     = df["ma7"].round(2).tolist()
+
+        all_vals = weights + ([goal_kg] if goal_kg else [])
+        y_min = round(min(all_vals) - 1.5, 1)
+        y_max = round(max(all_vals) + 1.5, 1)
+
+        fig = go.Figure()
+
+        # Rohgewicht-Punkte (dezent)
+        fig.add_trace(go.Scatter(
+            x=dates, y=weights,
+            mode="markers",
+            name="Tageswert",
+            marker=dict(size=5, color=COLORS["accent_blue"],
+                        opacity=0.5,
+                        line=dict(width=1, color=COLORS["bg_secondary"])),
+            hovertemplate="<b>%{y:.1f} kg</b><br>%{x}<extra>Tageswert</extra>",
+        ))
+
+        # 7-Tage Moving Average als Hauptlinie
+        fig.add_trace(go.Scatter(
+            x=dates, y=ma7,
+            mode="lines",
+            name="Ø 7 Tage",
+            line=dict(color=COLORS["accent_blue"], width=3, shape="spline"),
+            fill="tozeroy", fillcolor="rgba(0, 212, 255, 0.08)",
+            hovertemplate="<b>Ø %{y:.1f} kg</b><br>%{x}<extra>7-Tage-Schnitt</extra>",
+        ))
+
+        # Zielgewicht-Linie
+        if goal_kg is not None:
+            fig.add_hline(
+                y=goal_kg,
+                line_dash="dash",
+                line_color=COLORS["accent_green"],
+                line_width=2,
+                annotation_text=f"🎯 {goal_kg:.1f} kg",
+                annotation_font_color=COLORS["accent_green"],
+                annotation_font_size=10,
+                annotation_position="top right",
+            )
+
+        fig.update_layout(
+            title=dict(text="⚖️ Gewichtsverlauf & 7-Tage-Trend",
+                       font=dict(size=13, color=COLORS["text_primary"]),
+                       x=0, xanchor="left"),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor=COLORS["bg_secondary"],
+            font=dict(color=COLORS["text_secondary"], family="Inter", size=11),
+            margin=dict(l=8, r=8, t=44, b=8),
+            xaxis=dict(type="date", gridcolor=COLORS["border"],
+                       linecolor=COLORS["border"], tickfont=dict(size=9),
+                       tickformat="%d.%m."),
+            yaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"],
+                       ticksuffix=" kg", tickfont=dict(size=9),
+                       range=[y_min, y_max]),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                        xanchor="right", x=1,
+                        font=dict(size=9), bgcolor="rgba(0,0,0,0)"),
+            hovermode="x unified",
+            height=270,
+        )
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    st.markdown("---")
+
+    # ── SECTION 4: Prognose ────────────────────────────────────────────────
     weight_history = db.get_weight_history(weeks=16)
     saved_goal     = db.get_setting("goal_weight")
 
     if saved_goal and len(weight_history) >= 3:
-        goal_kg     = float(saved_goal)
-        current_kg  = weight_history[-1]["weight_kg"]
-        first_kg    = weight_history[0]["weight_kg"]
-        d1          = date.fromisoformat(weight_history[0]["log_date"])
-        d2          = date.fromisoformat(weight_history[-1]["log_date"])
-        days_passed = (d2 - d1).days
+        goal_kg = float(saved_goal)
 
-        if days_passed > 0:
-            daily_rate = (current_kg - first_kg) / days_passed  # kg/Tag (negativ = Abnahme)
+        # Letzten 7–14 Tage für die Rate nutzen
+        df_prog = _pd.DataFrame(weight_history)
+        df_prog["log_date"] = _pd.to_datetime(df_prog["log_date"])
+        df_prog = df_prog.sort_values("log_date").reset_index(drop=True)
 
-            going_right_dir = (daily_rate < 0 and goal_kg < current_kg) or \
-                              (daily_rate > 0 and goal_kg > current_kg)
+        window_days = min(14, len(df_prog))
+        df_window   = df_prog.tail(window_days)
 
-            if going_right_dir and abs(daily_rate) > 0:
-                days_needed  = abs(current_kg - goal_kg) / abs(daily_rate)
-                target_date  = d2 + _td(days=int(days_needed))
-                weekly_rate  = round(daily_rate * 7, 2)
-                direction    = "Abnahme" if daily_rate < 0 else "Zunahme"
-                trend_color  = COLORS["accent_green"] if daily_rate < 0 else COLORS["accent_blue"]
+        d_first = df_window["log_date"].iloc[0]
+        d_last  = df_window["log_date"].iloc[-1]
+        kg_first = df_window["weight_kg"].iloc[0]
+        kg_last  = df_window["weight_kg"].iloc[-1]
+        days_span = (d_last - d_first).days
+
+        if days_span > 0:
+            daily_rate = (kg_last - kg_first) / days_span
+
+            going_right_dir = (daily_rate < 0 and goal_kg < kg_last) or \
+                              (daily_rate > 0 and goal_kg > kg_last)
+
+            if going_right_dir and abs(daily_rate) > 0.001:
+                days_needed = abs(kg_last - goal_kg) / abs(daily_rate)
+                target_date = d_last.date() + _td(days=int(days_needed))
+                weekly_rate = round(daily_rate * 7, 2)
+                trend_color = COLORS["accent_green"] if daily_rate < 0 else COLORS["accent_blue"]
+
+                # Motivationstext
+                if days_needed <= 30:
+                    moti = "🔥 Fast geschafft – Endspurt!"
+                elif days_needed <= 90:
+                    moti = "💪 Auf einem guten Weg!"
+                else:
+                    moti = "🎯 Konstant dran bleiben!"
 
                 st.markdown(f"""
-                <div style="background:linear-gradient(135deg,{trend_color}15,{COLORS['bg_secondary']});
-                            border:1px solid {trend_color}44;border-radius:18px;
-                            padding:18px 16px;margin:12px 0;">
-                    <div style="color:{trend_color};font-size:0.75rem;font-weight:800;
-                                text-transform:uppercase;letter-spacing:0.08em;">
-                        🔮 Prognose bei aktuellem Tempo
+                <div style="background:linear-gradient(135deg,{trend_color}12,{COLORS['bg_secondary']});
+                            border:1px solid {trend_color}40;border-radius:18px;
+                            padding:18px 16px;margin:4px 0 12px 0;">
+                    <div style="color:{trend_color};font-size:0.72rem;font-weight:800;
+                                text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;">
+                        🔮 Prognose · Letzten {window_days} Tage als Basis
                     </div>
-                    <div style="display:flex;justify-content:space-between;margin-top:12px;gap:8px;">
-                        <div style="text-align:center;flex:1;">
-                            <div style="font-size:1.4rem;font-weight:900;color:{trend_color};">
+                    <div style="display:flex;justify-content:space-between;gap:6px;text-align:center;">
+                        <div style="flex:1;background:{COLORS['bg_primary']}88;border-radius:12px;padding:10px 6px;">
+                            <div style="font-size:1.5rem;font-weight:900;color:{trend_color};line-height:1.1;">
                                 {int(days_needed)}
                             </div>
-                            <div style="color:{COLORS['text_muted']};font-size:0.7rem;">Tage noch</div>
+                            <div style="color:{COLORS['text_muted']};font-size:0.68rem;margin-top:3px;">
+                                Tage noch
+                            </div>
                         </div>
-                        <div style="text-align:center;flex:1;">
-                            <div style="font-size:1.4rem;font-weight:900;color:{COLORS['text_primary']};">
+                        <div style="flex:1;background:{COLORS['bg_primary']}88;border-radius:12px;padding:10px 6px;">
+                            <div style="font-size:1.25rem;font-weight:900;color:{COLORS['text_primary']};line-height:1.1;">
                                 {target_date.strftime('%d.%m.%y')}
                             </div>
-                            <div style="color:{COLORS['text_muted']};font-size:0.7rem;">Zieldatum</div>
+                            <div style="color:{COLORS['text_muted']};font-size:0.68rem;margin-top:3px;">
+                                Zieldatum
+                            </div>
                         </div>
-                        <div style="text-align:center;flex:1;">
-                            <div style="font-size:1.4rem;font-weight:900;color:{trend_color};">
+                        <div style="flex:1;background:{COLORS['bg_primary']}88;border-radius:12px;padding:10px 6px;">
+                            <div style="font-size:1.5rem;font-weight:900;color:{trend_color};line-height:1.1;">
                                 {weekly_rate:+.2f}
                             </div>
-                            <div style="color:{COLORS['text_muted']};font-size:0.7rem;">kg/Woche</div>
+                            <div style="color:{COLORS['text_muted']};font-size:0.68rem;margin-top:3px;">
+                                kg/Woche
+                            </div>
                         </div>
+                    </div>
+                    <div style="text-align:center;margin-top:10px;color:{trend_color};
+                                font-size:0.82rem;font-weight:700;">
+                        {moti}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-            elif not going_right_dir and abs(daily_rate) > 0:
+
+            elif not going_right_dir and abs(daily_rate) > 0.001:
                 st.markdown(f"""
-                <div style="background:{COLORS['bg_secondary']};border:1px solid {COLORS['accent_red']}44;
-                            border-radius:14px;padding:14px;margin:12px 0;
-                            color:{COLORS['accent_orange']};font-size:0.88rem;font-weight:700;">
+                <div style="background:{COLORS['bg_secondary']};
+                            border:1px solid {COLORS['accent_red']}40;
+                            border-radius:14px;padding:14px;margin:4px 0 12px 0;
+                            color:{COLORS['accent_orange']};font-size:0.88rem;font-weight:700;
+                            text-align:center;">
                     ⚠️ Dein Trend geht gerade in die falsche Richtung – dran bleiben! 💪
                 </div>
                 """, unsafe_allow_html=True)
-
-    # ── Chart ──────────────────────────────────────────────────────────────
-    if len(weight_history) >= 1:
-        try:
-            import plotly.graph_objects as go
-            dates   = [e["log_date"]  for e in weight_history]
-            weights = [e["weight_kg"] for e in weight_history]
-            saved_goal = db.get_setting("goal_weight")
-
-            fig = go.Figure()
-
-            # Gewichtskurve
-            fig.add_trace(go.Scatter(
-                x=dates, y=weights,
-                mode="lines+markers",
-                name="Gewicht",
-                line=dict(color=COLORS["accent_blue"], width=2.5, shape="spline"),
-                marker=dict(size=7, color=COLORS["accent_blue"],
-                            line=dict(width=2, color=COLORS["bg_secondary"])),
-                fill="tozeroy", fillcolor="rgba(0, 212, 255, 0.08)",
-                hovertemplate="<b>%{y:.1f} kg</b><br>%{x}<extra></extra>",
-            ))
-
-            # Zielgewicht-Linie
-            if saved_goal:
-                fig.add_hline(
-                    y=float(saved_goal),
-                    line_dash="dash",
-                    line_color=COLORS["accent_green"],
-                    line_width=2,
-                    annotation_text=f"🎯 Ziel {float(saved_goal):.1f} kg",
-                    annotation_font_color=COLORS["accent_green"],
-                    annotation_font_size=10,
-                )
-
-            y_min = min(weights + ([float(saved_goal)] if saved_goal else [])) - 2
-            y_max = max(weights + ([float(saved_goal)] if saved_goal else [])) + 2
-
-            fig.update_layout(
-                title=dict(text="⚖️ Körpergewicht-Verlauf",
-                           font=dict(size=13, color=COLORS["text_primary"]),
-                           x=0, xanchor="left"),
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor=COLORS["bg_secondary"],
-                font=dict(color=COLORS["text_secondary"], family="Inter", size=11),
-                margin=dict(l=8, r=8, t=44, b=8),
-                xaxis=dict(type="date", gridcolor=COLORS["border"],
-                           linecolor=COLORS["border"], tickfont=dict(size=9),
-                           tickformat="%d.%m."),
-                yaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"],
-                           ticksuffix=" kg", tickfont=dict(size=9),
-                           range=[y_min, y_max]),
-                showlegend=False,
-                hovermode="x unified",
-                height=250,
-            )
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        except ImportError:
-            st.info("Plotly installieren für den Chart: pip install plotly")
+            else:
+                st.markdown(f"""
+                <div style="background:{COLORS['bg_secondary']};
+                            border:1px solid {COLORS['border']};
+                            border-radius:14px;padding:14px;margin:4px 0 12px 0;
+                            color:{COLORS['text_muted']};font-size:0.82rem;
+                            text-align:center;">
+                    📊 Noch zu wenig Bewegung im Gewicht für eine Prognose.
+                    Trag dich täglich ein!
+                </div>
+                """, unsafe_allow_html=True)
+    elif not saved_goal:
+        st.markdown(f"""
+        <div style="background:{COLORS['bg_secondary']};border:1px solid {COLORS['border']};
+                    border-radius:14px;padding:14px;margin:4px 0 12px 0;
+                    color:{COLORS['text_muted']};font-size:0.82rem;text-align:center;">
+            Trag oben ein Zielgewicht ein, um deine Prognose zu sehen. 🎯
+        </div>
+        """, unsafe_allow_html=True)
