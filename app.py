@@ -307,7 +307,7 @@ with tab_train:
                         </span>
                     </div>
                     """
-                st.markdown(rows_html + "</div>", unsafe_allow_html=True)
+                st.markdown(rows_html, unsafe_allow_html=True)
 
                 # Trotzdem Bearbeiten erlauben
                 if st.button(f"✏️ Bearbeiten", key=f"edit_{ex_name}"):
@@ -419,7 +419,7 @@ with tab_train:
                     else:
                         st.warning("Bitte mindestens einen Wert eingeben.")
 
-            st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown('<div style="height:4px;"></div>', unsafe_allow_html=True)
 
         # Workout abgeschlossen?
         if done_count == total_count and total_count > 0:
@@ -500,8 +500,9 @@ with tab_verlauf:
                         plot_bgcolor=COLORS["bg_secondary"],
                         font=dict(color=COLORS["text_secondary"], family="Inter", size=11),
                         margin=dict(l=8, r=8, t=44, b=8),
-                        xaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"],
-                                   tickfont=dict(size=9)),
+                        xaxis=dict(type="date", gridcolor=COLORS["border"],
+                                   linecolor=COLORS["border"], tickfont=dict(size=9),
+                                   tickformat="%d.%m."),
                         yaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"],
                                    ticksuffix=" kg", tickfont=dict(size=9)),
                         showlegend=False,
@@ -545,7 +546,7 @@ with tab_verlauf:
                     </div>
                     """, unsafe_allow_html=True)
 
-                st.markdown("</div>", unsafe_allow_html=True)
+                st.markdown('<div style="height:4px;"></div>', unsafe_allow_html=True)
 
                 # Trend-Berechnung
                 if len(history) >= 2:
@@ -576,6 +577,7 @@ with tab_verlauf:
 # ╚══════════════════════════════════════════════════════════════════════════╝
 
 with tab_gewicht:
+    from datetime import timedelta as _td
 
     st.markdown(f"""
     <div style="color:{COLORS['text_secondary']};font-size:0.8rem;font-weight:700;
@@ -584,25 +586,44 @@ with tab_gewicht:
     </div>
     """, unsafe_allow_html=True)
 
+    # ── Gewicht eintragen ──────────────────────────────────────────────────
     latest, previous = db.get_last_two_weights()
     default_weight   = latest["weight_kg"] if latest else 80.0
 
-    body_weight_input = st.number_input(
-        "GEWICHT (KG)",
-        min_value=20.0, max_value=300.0,
-        value=default_weight, step=0.1, format="%.1f",
-        key="body_weight_input",
-    )
+    col_w, col_g = st.columns(2)
+    with col_w:
+        body_weight_input = st.number_input(
+            "GEWICHT (KG)",
+            min_value=20.0, max_value=300.0,
+            value=default_weight, step=0.1, format="%.1f",
+            key="body_weight_input",
+        )
+    with col_g:
+        saved_goal = db.get_setting("goal_weight")
+        default_goal = float(saved_goal) if saved_goal else 75.0
+        goal_weight = st.number_input(
+            "ZIELGEWICHT (KG)",
+            min_value=20.0, max_value=300.0,
+            value=default_goal, step=0.1, format="%.1f",
+            key="goal_weight_input",
+        )
 
-    if st.button("📊 GEWICHT SPEICHERN", key="save_weight_btn"):
-        db.log_body_weight(body_weight_input)
-        st.success("Eingetragen! Bleib konsequent! 💪")
-        st.rerun()
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("📊 GEWICHT SPEICHERN", key="save_weight_btn", use_container_width=True):
+            db.log_body_weight(body_weight_input)
+            st.success("Eingetragen! 💪")
+            st.rerun()
+    with col_btn2:
+        if st.button("🎯 ZIEL SPEICHERN", key="save_goal_btn", use_container_width=True):
+            db.set_setting("goal_weight", str(goal_weight))
+            st.success(f"Ziel: {goal_weight} kg gespeichert!")
+            st.rerun()
 
     st.markdown(f'<div style="height:1px;background:{COLORS["border"]};margin:16px 0;"></div>',
                 unsafe_allow_html=True)
 
-    # Metric
+    # ── Aktuelle Werte ─────────────────────────────────────────────────────
     latest, previous = db.get_last_two_weights()
     if latest:
         col1, col2 = st.columns(2)
@@ -615,42 +636,127 @@ with tab_gewicht:
             st.metric("Aktuell", f"{latest['weight_kg']} kg",
                       delta=delta_str, delta_color="inverse",
                       help=f"vs. {previous['log_date']}" if previous else "")
-
         with col2:
-            if previous:
-                diff   = round(latest["weight_kg"] - previous["weight_kg"], 1)
-                icon   = "⬇️" if diff < 0 else ("⬆️" if diff > 0 else "➡️")
-                label  = "Abnahme" if diff < 0 else ("Zunahme" if diff > 0 else "Gleich")
-                color  = COLORS["accent_green"] if diff <= 0 else COLORS["accent_red"]
+            saved_goal = db.get_setting("goal_weight")
+            if saved_goal:
+                remaining = round(latest["weight_kg"] - float(saved_goal), 1)
+                color = COLORS["accent_green"] if remaining <= 0 else COLORS["accent_orange"]
+                icon  = "🏆" if remaining <= 0 else "🎯"
+                label = "ZIEL ERREICHT!" if remaining <= 0 else f"{abs(remaining)} kg zum Ziel"
                 st.markdown(f"""
-                <div style="background:{COLORS['bg_secondary']};border:1px solid {COLORS['border']};
-                            border-radius:16px;padding:16px;text-align:center;height:100%;">
-                    <div style="font-size:1.4rem;font-weight:800;color:{color};">
-                        {icon} {label}
+                <div style="background:{COLORS['bg_secondary']};border:1px solid {color}33;
+                            border-radius:16px;padding:16px;text-align:center;">
+                    <div style="font-size:1.3rem;">{icon}</div>
+                    <div style="font-size:0.95rem;font-weight:800;color:{color};margin-top:4px;">
+                        {label}
                     </div>
-                    <div style="color:{COLORS['text_muted']};font-size:0.72rem;margin-top:4px;">
-                        seit {previous['log_date']}
+                    <div style="color:{COLORS['text_muted']};font-size:0.72rem;margin-top:2px;">
+                        Ziel: {float(saved_goal):.1f} kg
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
 
-    # Verlaufschart
-    weight_history = db.get_weight_history(weeks=12)
-    if len(weight_history) >= 2:
+    # ── Prognose ───────────────────────────────────────────────────────────
+    weight_history = db.get_weight_history(weeks=16)
+    saved_goal     = db.get_setting("goal_weight")
+
+    if saved_goal and len(weight_history) >= 3:
+        goal_kg     = float(saved_goal)
+        current_kg  = weight_history[-1]["weight_kg"]
+        first_kg    = weight_history[0]["weight_kg"]
+        d1          = date.fromisoformat(weight_history[0]["log_date"])
+        d2          = date.fromisoformat(weight_history[-1]["log_date"])
+        days_passed = (d2 - d1).days
+
+        if days_passed > 0:
+            daily_rate = (current_kg - first_kg) / days_passed  # kg/Tag (negativ = Abnahme)
+
+            going_right_dir = (daily_rate < 0 and goal_kg < current_kg) or \
+                              (daily_rate > 0 and goal_kg > current_kg)
+
+            if going_right_dir and abs(daily_rate) > 0:
+                days_needed  = abs(current_kg - goal_kg) / abs(daily_rate)
+                target_date  = d2 + _td(days=int(days_needed))
+                weekly_rate  = round(daily_rate * 7, 2)
+                direction    = "Abnahme" if daily_rate < 0 else "Zunahme"
+                trend_color  = COLORS["accent_green"] if daily_rate < 0 else COLORS["accent_blue"]
+
+                st.markdown(f"""
+                <div style="background:linear-gradient(135deg,{trend_color}15,{COLORS['bg_secondary']});
+                            border:1px solid {trend_color}44;border-radius:18px;
+                            padding:18px 16px;margin:12px 0;">
+                    <div style="color:{trend_color};font-size:0.75rem;font-weight:800;
+                                text-transform:uppercase;letter-spacing:0.08em;">
+                        🔮 Prognose bei aktuellem Tempo
+                    </div>
+                    <div style="display:flex;justify-content:space-between;margin-top:12px;gap:8px;">
+                        <div style="text-align:center;flex:1;">
+                            <div style="font-size:1.4rem;font-weight:900;color:{trend_color};">
+                                {int(days_needed)}
+                            </div>
+                            <div style="color:{COLORS['text_muted']};font-size:0.7rem;">Tage noch</div>
+                        </div>
+                        <div style="text-align:center;flex:1;">
+                            <div style="font-size:1.4rem;font-weight:900;color:{COLORS['text_primary']};">
+                                {target_date.strftime('%d.%m.%y')}
+                            </div>
+                            <div style="color:{COLORS['text_muted']};font-size:0.7rem;">Zieldatum</div>
+                        </div>
+                        <div style="text-align:center;flex:1;">
+                            <div style="font-size:1.4rem;font-weight:900;color:{trend_color};">
+                                {weekly_rate:+.2f}
+                            </div>
+                            <div style="color:{COLORS['text_muted']};font-size:0.7rem;">kg/Woche</div>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            elif not going_right_dir and abs(daily_rate) > 0:
+                st.markdown(f"""
+                <div style="background:{COLORS['bg_secondary']};border:1px solid {COLORS['accent_red']}44;
+                            border-radius:14px;padding:14px;margin:12px 0;
+                            color:{COLORS['accent_orange']};font-size:0.88rem;font-weight:700;">
+                    ⚠️ Dein Trend geht gerade in die falsche Richtung – dran bleiben! 💪
+                </div>
+                """, unsafe_allow_html=True)
+
+    # ── Chart ──────────────────────────────────────────────────────────────
+    if len(weight_history) >= 1:
         try:
             import plotly.graph_objects as go
             dates   = [e["log_date"]  for e in weight_history]
             weights = [e["weight_kg"] for e in weight_history]
+            saved_goal = db.get_setting("goal_weight")
 
-            fig = go.Figure(go.Scatter(
+            fig = go.Figure()
+
+            # Gewichtskurve
+            fig.add_trace(go.Scatter(
                 x=dates, y=weights,
                 mode="lines+markers",
+                name="Gewicht",
                 line=dict(color=COLORS["accent_blue"], width=2.5, shape="spline"),
                 marker=dict(size=7, color=COLORS["accent_blue"],
                             line=dict(width=2, color=COLORS["bg_secondary"])),
-                fill="tozeroy", fillcolor="rgba(0, 212, 255, 0.09)",
-                hovertemplate="<b>%{y} kg</b><br>%{x}<extra></extra>",
+                fill="tozeroy", fillcolor="rgba(0, 212, 255, 0.08)",
+                hovertemplate="<b>%{y:.1f} kg</b><br>%{x}<extra></extra>",
             ))
+
+            # Zielgewicht-Linie
+            if saved_goal:
+                fig.add_hline(
+                    y=float(saved_goal),
+                    line_dash="dash",
+                    line_color=COLORS["accent_green"],
+                    line_width=2,
+                    annotation_text=f"🎯 Ziel {float(saved_goal):.1f} kg",
+                    annotation_font_color=COLORS["accent_green"],
+                    annotation_font_size=10,
+                )
+
+            y_min = min(weights + ([float(saved_goal)] if saved_goal else [])) - 2
+            y_max = max(weights + ([float(saved_goal)] if saved_goal else [])) + 2
+
             fig.update_layout(
                 title=dict(text="⚖️ Körpergewicht-Verlauf",
                            font=dict(size=13, color=COLORS["text_primary"]),
@@ -659,14 +765,15 @@ with tab_gewicht:
                 plot_bgcolor=COLORS["bg_secondary"],
                 font=dict(color=COLORS["text_secondary"], family="Inter", size=11),
                 margin=dict(l=8, r=8, t=44, b=8),
-                xaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"],
-                           tickfont=dict(size=9)),
+                xaxis=dict(type="date", gridcolor=COLORS["border"],
+                           linecolor=COLORS["border"], tickfont=dict(size=9),
+                           tickformat="%d.%m."),
                 yaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"],
                            ticksuffix=" kg", tickfont=dict(size=9),
-                           range=[min(weights) - 2, max(weights) + 2]),
+                           range=[y_min, y_max]),
                 showlegend=False,
                 hovermode="x unified",
-                height=230,
+                height=250,
             )
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         except ImportError:

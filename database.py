@@ -184,6 +184,13 @@ def init_db() -> None:
                 ON weight_logs(log_date)
         """)
 
+        _execute(conn, """
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
+
         # Pläne einmalig seeden
         for sort_i, plan_name in enumerate(PLAN_ORDER):
             _execute(conn,
@@ -418,6 +425,22 @@ def log_body_weight(weight_kg: float, log_date: str | None = None) -> None:
     # Cache nach Schreibvorgang leeren
     get_weight_history.clear()
     get_last_two_weights.clear()
+
+
+def get_setting(key: str) -> str | None:
+    """Liest einen App-Einstellungswert aus der Datenbank."""
+    with get_connection() as conn:
+        row = _fetchone(conn, "SELECT value FROM app_settings WHERE key=%s", (key,))
+    return row["value"] if row else None
+
+
+def set_setting(key: str, value: str) -> None:
+    """Speichert einen App-Einstellungswert dauerhaft."""
+    with get_connection() as conn:
+        _execute(conn, """
+            INSERT INTO app_settings (key, value) VALUES (%s, %s)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+        """, (key, value))
 
 
 @st.cache_data(ttl=60)
