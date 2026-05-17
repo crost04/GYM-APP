@@ -584,7 +584,7 @@ with tab_verlauf:
                         f'<div class="history-row" style="background:{bg};">'
                         f'<span style="color:{COLORS["text_secondary"]};font-size:0.8rem;">{h["log_date"]}</span>'
                         f'<span style="color:{COLORS["accent_green"]};font-weight:800;">{h["max_weight"]} kg</span>'
-                        f'<span style="color:{COLORS["accent_blue"]};font-weight:700;">{int(h["total_volume"]):,} kg</span>'
+                        f'<span style="color:{COLORS["accent_blue"]};font-weight:700;">{int(h["total_volume"]):,} kg</span>'.replace(",", ".")
                         f'<span style="color:{COLORS["accent_orange"]};font-weight:700;">~{orm} kg</span>'
                         f'</div>',
                         unsafe_allow_html=True,
