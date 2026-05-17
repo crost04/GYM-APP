@@ -219,12 +219,12 @@ with tab_train:
     # Wenn noch kein Plan gewählt: Plan-Auswahl zeigen
     if st.session_state["selected_plan"] is None:
 
-        st.markdown(f"""
-        <div style="color:{COLORS['text_secondary']};font-size:0.8rem;font-weight:700;
-                    text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;">
-            Welchen Workout machst du heute?
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="color:{COLORS["text_secondary"]};font-size:0.8rem;font-weight:700;'
+            f'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;">'
+            f'Welchen Workout machst du heute?</div>',
+            unsafe_allow_html=True,
+        )
 
         col1, col2 = st.columns(2)
         for i, plan in enumerate(plans):
@@ -245,20 +245,14 @@ with tab_train:
         total_count = len(exercises)
         pct = int(done_count / total_count * 100) if total_count > 0 else 0
 
-        st.markdown(f"""
-        <div style="display:flex;justify-content:space-between;align-items:center;
-                    margin-bottom:4px;">
-            <span style="font-size:1rem;font-weight:800;color:{COLORS['text_primary']};">
-                {selected_plan}
-            </span>
-            <span style="font-size:0.8rem;font-weight:700;color:{COLORS['accent_green']};">
-                {done_count}/{total_count} ✓
-            </span>
-        </div>
-        <div class="progress-bar-wrap">
-            <div class="progress-bar-fill" style="width:{pct}%;"></div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
+            f'<span style="font-size:1rem;font-weight:800;color:{COLORS["text_primary"]};">{selected_plan}</span>'
+            f'<span style="font-size:0.8rem;font-weight:700;color:{COLORS["accent_green"]};">{done_count}/{total_count} ✓</span>'
+            f'</div>'
+            f'<div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:{pct}%;"></div></div>',
+            unsafe_allow_html=True,
+        )
 
         # Plan wechseln
         if st.button("← Plan wechseln", key="change_plan_btn"):
@@ -288,26 +282,21 @@ with tab_train:
                 for s in today_sets:
                     tag   = "🔸 Aufwärm" if s["set_type"] == "warmup" else f"Satz {s['set_number']}"
                     color = COLORS["accent_orange"] if s["set_type"] == "warmup" else COLORS["accent_green"]
-                    rows_html += f"""
-                    <div style="display:flex;justify-content:space-between;
-                                padding:6px 0;border-bottom:1px solid {COLORS['border']};">
-                        <span style="color:{COLORS['text_muted']};font-size:0.82rem;">{tag}</span>
-                        <span style="color:{color};font-weight:700;font-size:0.9rem;">
-                            {s['weight_kg']} kg × {s['reps']} Reps
-                        </span>
-                    </div>
-                    """
-                st.markdown(f"""
-                <div class="{card_class}">
-                    <div style="display:flex;justify-content:space-between;align-items:center;
-                                margin-bottom:10px;">
-                        <span style="font-size:0.95rem;font-weight:800;
-                                     color:{COLORS['text_primary']};">{ex_name}</span>
-                        {done_icon}
-                    </div>
-                    {rows_html}
-                </div>
-                """, unsafe_allow_html=True)
+                    rows_html += (
+                        f'<div style="display:flex;justify-content:space-between;'
+                        f'padding:6px 0;border-bottom:1px solid {COLORS["border"]};">'
+                        f'<span style="color:{COLORS["text_muted"]};font-size:0.82rem;">{tag}</span>'
+                        f'<span style="color:{color};font-weight:700;font-size:0.9rem;">'
+                        f'{s["weight_kg"]} kg × {s["reps"]} Reps</span></div>'
+                    )
+                card_html = (
+                    f'<div class="{card_class}">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
+                    f'<span style="font-size:0.95rem;font-weight:800;color:{COLORS["text_primary"]};">{ex_name}</span>'
+                    f'{done_icon}</div>'
+                    f'{rows_html}</div>'
+                )
+                st.markdown(card_html, unsafe_allow_html=True)
 
                 # Fehlereintrag löschen
                 if st.button(f"🗑️ Eintrag löschen", key=f"edit_{ex_name}"):
@@ -393,10 +382,11 @@ with tab_train:
 
                         col_label, col_w, col_r = st.columns([1, 3, 2])
                         with col_label:
-                            st.markdown(f"""
-                            <div style="padding-top:32px;color:{COLORS['text_muted']};
-                                        font-size:0.78rem;font-weight:700;">#{i}</div>
-                            """, unsafe_allow_html=True)
+                            st.markdown(
+                                f'<div style="padding-top:32px;color:{COLORS["text_muted"]};'
+                                f'font-size:0.78rem;font-weight:700;">#{i}</div>',
+                                unsafe_allow_html=True,
+                            )
                         with col_w:
                             w = st.number_input(
                                 f"kg",
@@ -416,13 +406,12 @@ with tab_train:
                 # Letzten Rekord anzeigen
                 prev_max = db.get_max_weight_for_exercise(ex_name)
                 if prev_max:
-                    st.markdown(f"""
-                    <div style="color:{COLORS['text_muted']};font-size:0.72rem;
-                                margin:6px 0 4px 0;">
-                        Bisheriger Rekord: <span style="color:{COLORS['accent_blue']};
-                        font-weight:700;">{prev_max} kg</span>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(
+                        f'<div style="color:{COLORS["text_muted"]};font-size:0.72rem;margin:6px 0 4px 0;">'
+                        f'Bisheriger Rekord: <span style="color:{COLORS["accent_blue"]};font-weight:700;">'
+                        f'{prev_max} kg</span></div>',
+                        unsafe_allow_html=True,
+                    )
 
                 submitted = st.form_submit_button(
                     f"✅ {ex_name} speichern",
@@ -453,18 +442,17 @@ with tab_train:
 
         # Workout abgeschlossen?
         if done_count == total_count and total_count > 0:
-            st.markdown(f"""
-            <div style="background:linear-gradient(135deg,{COLORS['accent_green']}22,
-                        {COLORS['accent_blue']}11);border:2px solid {COLORS['accent_green']};
-                        border-radius:18px;padding:24px 16px;text-align:center;margin-top:16px;">
-                <div style="font-size:2.5rem;">🏆</div>
-                <div style="color:{COLORS['accent_green']};font-size:1.2rem;font-weight:800;
-                            margin-top:8px;">WORKOUT ABGESCHLOSSEN!</div>
-                <div style="color:{COLORS['text_secondary']};font-size:0.9rem;margin-top:6px;">
-                    {selected_plan} – alle {total_count} Übungen erledigt. Absolute Bestie! 🔥
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(
+                f'<div style="background:linear-gradient(135deg,{COLORS["accent_green"]}22,{COLORS["accent_blue"]}11);'
+                f'border:2px solid {COLORS["accent_green"]};border-radius:18px;'
+                f'padding:24px 16px;text-align:center;margin-top:16px;">'
+                f'<div style="font-size:2.5rem;">🏆</div>'
+                f'<div style="color:{COLORS["accent_green"]};font-size:1.2rem;font-weight:800;margin-top:8px;">'
+                f'WORKOUT ABGESCHLOSSEN!</div>'
+                f'<div style="color:{COLORS["text_secondary"]};font-size:0.9rem;margin-top:6px;">'
+                f'{selected_plan} – alle {total_count} Übungen erledigt. Absolute Bestie! 🔥</div></div>',
+                unsafe_allow_html=True,
+            )
 
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
@@ -473,24 +461,22 @@ with tab_train:
 
 with tab_verlauf:
 
-    st.markdown(f"""
-    <div style="color:{COLORS['text_secondary']};font-size:0.8rem;font-weight:700;
-                text-transform:uppercase;letter-spacing:0.08em;margin-bottom:14px;">
-        Letzte 4 Wochen
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="color:{COLORS["text_secondary"]};font-size:0.8rem;font-weight:700;'
+        f'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:14px;">Letzte 4 Wochen</div>',
+        unsafe_allow_html=True,
+    )
 
     trained_exercises = db.get_all_trained_exercises(weeks=4)
 
     if not trained_exercises:
-        st.markdown(f"""
-        <div class="gym-card" style="text-align:center;padding:32px 16px;">
-            <div style="font-size:2rem;">📊</div>
-            <div style="color:{COLORS['text_secondary']};font-size:0.9rem;margin-top:10px;">
-                Noch keine Daten. Starte dein erstes Training!
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="gym-card" style="text-align:center;padding:32px 16px;">'
+            f'<div style="font-size:2rem;">📊</div>'
+            f'<div style="color:{COLORS["text_secondary"]};font-size:0.9rem;margin-top:10px;">'
+            f'Noch keine Daten. Starte dein erstes Training!</div></div>',
+            unsafe_allow_html=True,
+        )
     else:
         selected_ex = st.selectbox(
             "ÜBUNG",
@@ -642,12 +628,12 @@ with tab_gewicht:
     default_goal     = float(saved_goal) if saved_goal else 75.0
 
     with st.form("weight_form", clear_on_submit=False):
-        st.markdown(f"""
-        <div style="color:{COLORS['text_secondary']};font-size:0.75rem;font-weight:700;
-                    text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">
-            ⚖️ Heutiges Gewicht eintragen
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="color:{COLORS["text_secondary"]};font-size:0.75rem;font-weight:700;'
+            f'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">'
+            f'⚖️ Heutiges Gewicht eintragen</div>',
+            unsafe_allow_html=True,
+        )
 
         col_w, col_g = st.columns(2)
         with col_w:
@@ -724,16 +710,13 @@ with tab_gewicht:
                 if not direction_ok:
                     progress_pct = 0.0
 
-                st.markdown(f"""
-                <div style="color:{COLORS['text_muted']};font-size:0.7rem;font-weight:700;
-                            text-transform:uppercase;letter-spacing:0.07em;
-                            margin-top:12px;margin-bottom:4px;">
-                    Fortschritt zum Ziel
-                    <span style="float:right;color:{COLORS['text_secondary']};">
-                        {int(progress_pct*100)} %
-                    </span>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(
+                    f'<div style="color:{COLORS["text_muted"]};font-size:0.7rem;font-weight:700;'
+                    f'text-transform:uppercase;letter-spacing:0.07em;margin-top:12px;margin-bottom:4px;">'
+                    f'Fortschritt zum Ziel '
+                    f'<span style="float:right;color:{COLORS["text_secondary"]};">{int(progress_pct*100)} %</span></div>',
+                    unsafe_allow_html=True,
+                )
                 st.progress(progress_pct)
 
     st.markdown("---")
@@ -861,73 +844,48 @@ with tab_gewicht:
                 else:
                     moti = "🎯 Konstant dran bleiben!"
 
-                st.markdown(f"""
-                <div style="background:linear-gradient(135deg,{trend_color}12,{COLORS['bg_secondary']});
-                            border:1px solid {trend_color}40;border-radius:18px;
-                            padding:18px 16px;margin:4px 0 12px 0;">
-                    <div style="color:{trend_color};font-size:0.72rem;font-weight:800;
-                                text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;">
-                        🔮 Prognose · Letzten {window_days} Tage als Basis
-                    </div>
-                    <div style="display:flex;justify-content:space-between;gap:6px;text-align:center;">
-                        <div style="flex:1;background:{COLORS['bg_primary']}88;border-radius:12px;padding:10px 6px;">
-                            <div style="font-size:1.5rem;font-weight:900;color:{trend_color};line-height:1.1;">
-                                {int(days_needed)}
-                            </div>
-                            <div style="color:{COLORS['text_muted']};font-size:0.68rem;margin-top:3px;">
-                                Tage noch
-                            </div>
-                        </div>
-                        <div style="flex:1;background:{COLORS['bg_primary']}88;border-radius:12px;padding:10px 6px;">
-                            <div style="font-size:1.25rem;font-weight:900;color:{COLORS['text_primary']};line-height:1.1;">
-                                {target_date.strftime('%d.%m.%y')}
-                            </div>
-                            <div style="color:{COLORS['text_muted']};font-size:0.68rem;margin-top:3px;">
-                                Zieldatum
-                            </div>
-                        </div>
-                        <div style="flex:1;background:{COLORS['bg_primary']}88;border-radius:12px;padding:10px 6px;">
-                            <div style="font-size:1.5rem;font-weight:900;color:{trend_color};line-height:1.1;">
-                                {weekly_rate:+.2f}
-                            </div>
-                            <div style="color:{COLORS['text_muted']};font-size:0.68rem;margin-top:3px;">
-                                kg/Woche
-                            </div>
-                        </div>
-                    </div>
-                    <div style="text-align:center;margin-top:10px;color:{trend_color};
-                                font-size:0.82rem;font-weight:700;">
-                        {moti}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(
+                    f'<div style="background:linear-gradient(135deg,{trend_color}12,{COLORS["bg_secondary"]});'
+                    f'border:1px solid {trend_color}40;border-radius:18px;padding:18px 16px;margin:4px 0 12px 0;">'
+                    f'<div style="color:{trend_color};font-size:0.72rem;font-weight:800;'
+                    f'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;">'
+                    f'🔮 Prognose · Letzten {window_days} Tage als Basis</div>'
+                    f'<div style="display:flex;justify-content:space-between;gap:6px;text-align:center;">'
+                    f'<div style="flex:1;background:{COLORS["bg_primary"]}88;border-radius:12px;padding:10px 6px;">'
+                    f'<div style="font-size:1.5rem;font-weight:900;color:{trend_color};line-height:1.1;">{int(days_needed)}</div>'
+                    f'<div style="color:{COLORS["text_muted"]};font-size:0.68rem;margin-top:3px;">Tage noch</div></div>'
+                    f'<div style="flex:1;background:{COLORS["bg_primary"]}88;border-radius:12px;padding:10px 6px;">'
+                    f'<div style="font-size:1.25rem;font-weight:900;color:{COLORS["text_primary"]};line-height:1.1;">{target_date.strftime("%d.%m.%y")}</div>'
+                    f'<div style="color:{COLORS["text_muted"]};font-size:0.68rem;margin-top:3px;">Zieldatum</div></div>'
+                    f'<div style="flex:1;background:{COLORS["bg_primary"]}88;border-radius:12px;padding:10px 6px;">'
+                    f'<div style="font-size:1.5rem;font-weight:900;color:{trend_color};line-height:1.1;">{weekly_rate:+.2f}</div>'
+                    f'<div style="color:{COLORS["text_muted"]};font-size:0.68rem;margin-top:3px;">kg/Woche</div></div></div>'
+                    f'<div style="text-align:center;margin-top:10px;color:{trend_color};font-size:0.82rem;font-weight:700;">'
+                    f'{moti}</div></div>',
+                    unsafe_allow_html=True,
+                )
 
             elif not going_right_dir and abs(daily_rate) > 0.001:
-                st.markdown(f"""
-                <div style="background:{COLORS['bg_secondary']};
-                            border:1px solid {COLORS['accent_red']}40;
-                            border-radius:14px;padding:14px;margin:4px 0 12px 0;
-                            color:{COLORS['accent_orange']};font-size:0.88rem;font-weight:700;
-                            text-align:center;">
-                    ⚠️ Dein Trend geht gerade in die falsche Richtung – dran bleiben! 💪
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(
+                    f'<div style="background:{COLORS["bg_secondary"]};border:1px solid {COLORS["accent_red"]}40;'
+                    f'border-radius:14px;padding:14px;margin:4px 0 12px 0;'
+                    f'color:{COLORS["accent_orange"]};font-size:0.88rem;font-weight:700;text-align:center;">'
+                    f'⚠️ Dein Trend geht gerade in die falsche Richtung – dran bleiben! 💪</div>',
+                    unsafe_allow_html=True,
+                )
             else:
-                st.markdown(f"""
-                <div style="background:{COLORS['bg_secondary']};
-                            border:1px solid {COLORS['border']};
-                            border-radius:14px;padding:14px;margin:4px 0 12px 0;
-                            color:{COLORS['text_muted']};font-size:0.82rem;
-                            text-align:center;">
-                    📊 Noch zu wenig Bewegung im Gewicht für eine Prognose.
-                    Trag dich täglich ein!
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(
+                    f'<div style="background:{COLORS["bg_secondary"]};border:1px solid {COLORS["border"]};'
+                    f'border-radius:14px;padding:14px;margin:4px 0 12px 0;'
+                    f'color:{COLORS["text_muted"]};font-size:0.82rem;text-align:center;">'
+                    f'📊 Noch zu wenig Bewegung im Gewicht für eine Prognose. Trag dich täglich ein!</div>',
+                    unsafe_allow_html=True,
+                )
     elif not saved_goal:
-        st.markdown(f"""
-        <div style="background:{COLORS['bg_secondary']};border:1px solid {COLORS['border']};
-                    border-radius:14px;padding:14px;margin:4px 0 12px 0;
-                    color:{COLORS['text_muted']};font-size:0.82rem;text-align:center;">
-            Trag oben ein Zielgewicht ein, um deine Prognose zu sehen. 🎯
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="background:{COLORS["bg_secondary"]};border:1px solid {COLORS["border"]};'
+            f'border-radius:14px;padding:14px;margin:4px 0 12px 0;'
+            f'color:{COLORS["text_muted"]};font-size:0.82rem;text-align:center;">'
+            f'Trag oben ein Zielgewicht ein, um deine Prognose zu sehen. 🎯</div>',
+            unsafe_allow_html=True,
+        )
