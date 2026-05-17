@@ -28,7 +28,12 @@ from styles import get_css, streak_card_html, COLORS
 # Init
 # ---------------------------------------------------------------------------
 
-db.init_db()
+@st.cache_resource
+def _init_db_once():
+    db.init_db()
+    return True
+
+_init_db_once()
 st.markdown(get_css(), unsafe_allow_html=True)
 
 # Zusätzliches CSS speziell für v2

@@ -68,9 +68,17 @@ def _get_db_url() -> str:
     return st.secrets["DATABASE_URL"]
 
 
+@st.cache_resource
+def _get_pool():
+    """Erstellt einen wiederverwendbaren Connection-Pool (einmalig pro Session)."""
+    from psycopg2 import pool as pg_pool
+    return pg_pool.ThreadedConnectionPool(1, 5, _get_db_url())
+
+
 @contextmanager
 def get_connection():
-    conn = psycopg2.connect(_get_db_url())
+    pool = _get_pool()
+    conn = pool.getconn()
     try:
         yield conn
         conn.commit()
@@ -78,7 +86,7 @@ def get_connection():
         conn.rollback()
         raise
     finally:
-        conn.close()
+        pool.putconn(conn)
 
 
 # ---------------------------------------------------------------------------
