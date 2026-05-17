@@ -309,9 +309,9 @@ with tab_train:
                 </div>
                 """, unsafe_allow_html=True)
 
-                # Bearbeiten-Button außerhalb der HTML-Karte
-                if st.button(f"✏️ Bearbeiten", key=f"edit_{ex_name}"):
-                    db.log_exercise_sets(ex_name, [])  # Löscht heutige Einträge
+                # Fehlereintrag löschen
+                if st.button(f"🗑️ Eintrag löschen", key=f"edit_{ex_name}"):
+                    db.log_exercise_sets(ex_name, [])
                     st.rerun()
                 continue
 
@@ -319,10 +319,34 @@ with tab_train:
             with st.form(key=f"form_{ex_name}", clear_on_submit=False):
                 st.markdown(
                     f'<div style="font-size:0.95rem;font-weight:800;'
-                    f'color:{COLORS["text_primary"]};margin-bottom:10px;">'
+                    f'color:{COLORS["text_primary"]};margin-bottom:6px;">'
                     f'{ex_name}</div>',
                     unsafe_allow_html=True,
                 )
+
+                # ── "Letztes Mal"-Referenz ────────────────────────────────
+                if last_session:
+                    working_refs = []
+                    for sn in range(1, working_sets + 1):
+                        prev_s = last_session.get(("working", sn))
+                        if prev_s:
+                            wkg = prev_s["weight_kg"]
+                            rps = prev_s["reps"]
+                            w_str = f"{wkg:.0f}" if wkg == int(wkg) else f"{wkg:.1f}"
+                            working_refs.append(
+                                f'<b style="color:{COLORS["text_secondary"]};">'
+                                f'#{sn}:</b> {w_str}kg × {rps}'
+                            )
+                    if working_refs:
+                        st.markdown(
+                            f'<div style="background:{COLORS["bg_tertiary"]};'
+                            f'border-left:3px solid {COLORS["accent_blue"]}66;'
+                            f'border-radius:0 8px 8px 0;padding:5px 10px;'
+                            f'margin-bottom:10px;font-size:0.72rem;'
+                            f'color:{COLORS["text_muted"]};">'
+                            f'💾 Letztes Mal: ' + '  ·  '.join(working_refs) + '</div>',
+                            unsafe_allow_html=True,
+                        )
 
                 all_set_inputs = []
 
@@ -478,89 +502,113 @@ with tab_verlauf:
             history = db.get_exercise_history(selected_ex, weeks=4)
 
             if history:
-                # Mini-Chart: Max-Gewicht über Zeit (Plotly falls verfügbar)
-                try:
-                    import plotly.graph_objects as go
+                import plotly.graph_objects as go
 
-                    dates   = [h["log_date"]  for h in reversed(history)]
-                    weights = [h["max_weight"] for h in reversed(history)]
-                    volumes = [h["total_volume"] for h in reversed(history)]
+                # ── Metrik-Auswahl ─────────────────────────────────────────
+                chart_metric = st.radio(
+                    "METRIK",
+                    options=["💪 Max-Gewicht", "📦 Gesamtvolumen", "⚡ 1RM (Epley)"],
+                    horizontal=True,
+                    key="verlauf_metric",
+                )
 
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(
-                        x=dates, y=weights,
-                        mode="lines+markers",
-                        name="Max-Gewicht",
-                        line=dict(color=COLORS["accent_green"], width=2.5, shape="spline"),
-                        marker=dict(size=8, color=COLORS["accent_green"],
-                                    line=dict(width=2, color=COLORS["bg_secondary"])),
-                        fill="tozeroy",
-                        fillcolor="rgba(57, 255, 20, 0.08)",
-                        hovertemplate="<b>%{y} kg</b><br>%{x}<extra></extra>",
-                    ))
-                    fig.update_layout(
-                        title=dict(text=f"🏋️ {selected_ex} – Max-Gewicht",
-                                   font=dict(size=13, color=COLORS["text_primary"]),
-                                   x=0, xanchor="left"),
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        plot_bgcolor=COLORS["bg_secondary"],
-                        font=dict(color=COLORS["text_secondary"], family="Inter", size=11),
-                        margin=dict(l=8, r=8, t=44, b=8),
-                        xaxis=dict(type="date", gridcolor=COLORS["border"],
-                                   linecolor=COLORS["border"], tickfont=dict(size=9),
-                                   tickformat="%d.%m."),
-                        yaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"],
-                                   ticksuffix=" kg", tickfont=dict(size=9)),
-                        showlegend=False,
-                        hovermode="x unified",
-                        height=220,
-                    )
-                    st.plotly_chart(fig, use_container_width=True,
-                                    config={"displayModeBar": False})
+                dates_asc = [h["log_date"]  for h in reversed(history)]
 
-                except ImportError:
-                    pass
+                # Werte je nach Metrik berechnen
+                if chart_metric == "💪 Max-Gewicht":
+                    y_vals    = [h["max_weight"] for h in reversed(history)]
+                    y_suffix  = " kg"
+                    line_col  = COLORS["accent_green"]
+                    fill_col  = "rgba(57, 255, 20, 0.08)"
+                    chart_lbl = f"🏋️ {selected_ex} – Max-Gewicht"
+                    hover_fmt = "<b>%{y:.1f} kg</b><br>%{x}<extra></extra>"
 
-                # Tabelle
-                st.markdown(f"""
-                <div style="border-radius:14px;overflow:hidden;
-                            border:1px solid {COLORS['border']};margin-top:12px;">
-                    <div class="history-row history-header">
-                        <span>Datum</span>
-                        <span>Max-Gewicht</span>
-                        <span>Volumen</span>
-                        <span>Sätze</span>
-                    </div>
-                """, unsafe_allow_html=True)
+                elif chart_metric == "📦 Gesamtvolumen":
+                    y_vals    = [float(h["total_volume"]) for h in reversed(history)]
+                    y_suffix  = " kg"
+                    line_col  = COLORS["accent_blue"]
+                    fill_col  = "rgba(0, 212, 255, 0.08)"
+                    chart_lbl = f"📦 {selected_ex} – Gesamtvolumen"
+                    hover_fmt = "<b>%{y:,.0f} kg</b><br>%{x}<extra></extra>"
+
+                else:  # 1RM Epley: weight * (1 + reps / 30)
+                    y_vals = []
+                    for h in reversed(history):
+                        avg_r = h["avg_reps"] if h["avg_reps"] else 1
+                        orm   = round(float(h["max_weight"]) * (1 + float(avg_r) / 30), 1)
+                        y_vals.append(orm)
+                    y_suffix  = " kg"
+                    line_col  = COLORS["accent_orange"]
+                    fill_col  = "rgba(255, 149, 0, 0.08)"
+                    chart_lbl = f"⚡ {selected_ex} – Geschätztes 1RM"
+                    hover_fmt = "<b>~%{y:.1f} kg 1RM</b><br>%{x}<extra></extra>"
+
+                # ── Chart ──────────────────────────────────────────────────
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=dates_asc, y=y_vals,
+                    mode="lines+markers",
+                    name=chart_metric,
+                    line=dict(color=line_col, width=2.5, shape="spline"),
+                    marker=dict(size=8, color=line_col,
+                                line=dict(width=2, color=COLORS["bg_secondary"])),
+                    fill="tozeroy",
+                    fillcolor=fill_col,
+                    hovertemplate=hover_fmt,
+                ))
+                fig.update_layout(
+                    title=dict(text=chart_lbl,
+                               font=dict(size=13, color=COLORS["text_primary"]),
+                               x=0, xanchor="left"),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor=COLORS["bg_secondary"],
+                    font=dict(color=COLORS["text_secondary"], family="Inter", size=11),
+                    margin=dict(l=8, r=8, t=44, b=8),
+                    xaxis=dict(type="date", gridcolor=COLORS["border"],
+                               linecolor=COLORS["border"], tickfont=dict(size=9),
+                               tickformat="%d.%m."),
+                    yaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"],
+                               ticksuffix=y_suffix, tickfont=dict(size=9)),
+                    showlegend=False,
+                    hovermode="x unified",
+                    height=230,
+                )
+                st.plotly_chart(fig, use_container_width=True,
+                                config={"displayModeBar": False})
+
+                # ── Tabelle ────────────────────────────────────────────────
+                st.markdown(
+                    f'<div style="border-radius:14px;overflow:hidden;'
+                    f'border:1px solid {COLORS["border"]};margin-top:12px;">'
+                    f'<div class="history-row history-header">'
+                    f'<span>Datum</span><span>Max-Gew.</span>'
+                    f'<span>Volumen</span><span>1RM~</span></div>',
+                    unsafe_allow_html=True,
+                )
 
                 for i, h in enumerate(history):
-                    bg = COLORS["bg_secondary"] if i % 2 == 0 else COLORS["bg_primary"]
-                    st.markdown(f"""
-                    <div class="history-row" style="background:{bg};">
-                        <span style="color:{COLORS['text_secondary']};font-size:0.8rem;">
-                            {h['log_date']}
-                        </span>
-                        <span style="color:{COLORS['accent_green']};font-weight:800;">
-                            {h['max_weight']} kg
-                        </span>
-                        <span style="color:{COLORS['accent_blue']};font-weight:700;">
-                            {int(h['total_volume']):,} kg
-                        </span>
-                        <span style="color:{COLORS['text_muted']};">
-                            {int(h['working_sets_count'])}×
-                        </span>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    bg    = COLORS["bg_secondary"] if i % 2 == 0 else COLORS["bg_primary"]
+                    avg_r = h["avg_reps"] if h["avg_reps"] else 1
+                    orm   = round(float(h["max_weight"]) * (1 + float(avg_r) / 30), 1)
+                    st.markdown(
+                        f'<div class="history-row" style="background:{bg};">'
+                        f'<span style="color:{COLORS["text_secondary"]};font-size:0.8rem;">{h["log_date"]}</span>'
+                        f'<span style="color:{COLORS["accent_green"]};font-weight:800;">{h["max_weight"]} kg</span>'
+                        f'<span style="color:{COLORS["accent_blue"]};font-weight:700;">{int(h["total_volume"]):,} kg</span>'
+                        f'<span style="color:{COLORS["accent_orange"]};font-weight:700;">~{orm} kg</span>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
 
                 st.markdown('<div style="height:4px;"></div>', unsafe_allow_html=True)
 
-                # Trend-Berechnung
+                # ── Trend-Berechnung ───────────────────────────────────────
                 if len(history) >= 2:
                     first_w = history[-1]["max_weight"]
                     last_w  = history[0]["max_weight"]
-                    diff    = round(last_w - first_w, 1)
+                    diff    = round(float(last_w) - float(first_w), 1)
                     if diff > 0:
-                        trend_msg = f"⬆️ +{diff} kg in 4 Wochen – du wirst stärker! 💪"
+                        trend_msg = f"⬆️ +{diff} kg Max-Gewicht in 4 Wochen – du wirst stärker! 💪"
                         trend_col = COLORS["accent_green"]
                     elif diff < 0:
                         trend_msg = f"⬇️ {diff} kg – dran bleiben, es kommt zurück! 🔥"
@@ -569,13 +617,14 @@ with tab_verlauf:
                         trend_msg = "➡️ Stabiles Niveau – steiger die Reps! 💡"
                         trend_col = COLORS["accent_blue"]
 
-                    st.markdown(f"""
-                    <div style="background:{COLORS['bg_secondary']};border:1px solid {COLORS['border']};
-                                border-radius:12px;padding:12px 14px;margin-top:10px;
-                                color:{trend_col};font-size:0.88rem;font-weight:700;">
-                        {trend_msg}
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(
+                        f'<div style="background:{COLORS["bg_secondary"]};'
+                        f'border:1px solid {COLORS["border"]};border-radius:12px;'
+                        f'padding:12px 14px;margin-top:10px;'
+                        f'color:{trend_col};font-size:0.88rem;font-weight:700;">'
+                        f'{trend_msg}</div>',
+                        unsafe_allow_html=True,
+                    )
 
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
