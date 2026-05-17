@@ -1,6 +1,6 @@
 """
-GYM-APP | database.py  (v2 – Plan-basiert)
-==========================================
+GYM-APP | database.py  (v3 – Supabase / PostgreSQL)
+=====================================================
 Schema:
   training_plans   → Push / Pull / Beine / Arme
   plan_exercises   → Übungen je Plan (Reihenfolge + Satz-Typen)
@@ -8,18 +8,15 @@ Schema:
   weight_logs      → Körpergewicht-Verlauf
 """
 
-import sqlite3
+import psycopg2
+import psycopg2.extras
+import streamlit as st
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
-from pathlib import Path
-
-DB_PATH = Path(__file__).parent / "gym_app.db"
 
 # ---------------------------------------------------------------------------
 # Christians Trainingsplan – wird beim ersten Start einmalig eingetragen
 # ---------------------------------------------------------------------------
-# Format: (exercise_name, warmup_sets, working_sets)
-
 PLAN_SEED = {
     "Push 💪": [
         ("Schrägbank Maschine",           1, 3),
@@ -66,12 +63,14 @@ PLAN_ORDER = ["Push 💪", "Pull 🔙", "Beine 🦵", "Arme 💪"]
 # Connection
 # ---------------------------------------------------------------------------
 
+def _get_db_url() -> str:
+    """Liest die Datenbank-URL aus den Streamlit Secrets."""
+    return st.secrets["DATABASE_URL"]
+
+
 @contextmanager
 def get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+    conn = psycopg2.connect(_get_db_url())
     try:
         yield conn
         conn.commit()
@@ -83,76 +82,118 @@ def get_connection():
 
 
 # ---------------------------------------------------------------------------
+# Query-Helpers (ersetzen sqlite3.Row durch echte Dicts)
+# ---------------------------------------------------------------------------
+
+def _fetchall(conn, query: str, params=None) -> list[dict]:
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(query, params or ())
+        return [dict(r) for r in cur.fetchall()]
+
+
+def _fetchone(conn, query: str, params=None) -> dict | None:
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(query, params or ())
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def _execute(conn, query: str, params=None) -> None:
+    with conn.cursor() as cur:
+        cur.execute(query, params or ())
+
+
+def _executemany(conn, query: str, params_list: list) -> None:
+    with conn.cursor() as cur:
+        cur.executemany(query, params_list)
+
+
+def _to_date_str(val) -> str | None:
+    """Konvertiert date/datetime-Objekte zu ISO-String (für einheitliche Rückgabewerte)."""
+    if val is None:
+        return None
+    if isinstance(val, (date, datetime)):
+        return val.isoformat()
+    return str(val)
+
+
+# ---------------------------------------------------------------------------
 # Init
 # ---------------------------------------------------------------------------
 
 def init_db() -> None:
     """Erstellt alle Tabellen und füllt den Trainingsplan beim ersten Start."""
     with get_connection() as conn:
-        conn.executescript("""
+
+        _execute(conn, """
             CREATE TABLE IF NOT EXISTS training_plans (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                id         SERIAL PRIMARY KEY,
                 name       TEXT NOT NULL UNIQUE,
                 sort_order INTEGER NOT NULL DEFAULT 0
-            );
+            )
+        """)
 
+        _execute(conn, """
             CREATE TABLE IF NOT EXISTS plan_exercises (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                plan_id      INTEGER NOT NULL REFERENCES training_plans(id),
+                id            SERIAL PRIMARY KEY,
+                plan_id       INTEGER NOT NULL REFERENCES training_plans(id),
                 exercise_name TEXT NOT NULL,
-                sort_order   INTEGER NOT NULL DEFAULT 0,
-                warmup_sets  INTEGER NOT NULL DEFAULT 0,
-                working_sets INTEGER NOT NULL DEFAULT 3
-            );
+                sort_order    INTEGER NOT NULL DEFAULT 0,
+                warmup_sets   INTEGER NOT NULL DEFAULT 0,
+                working_sets  INTEGER NOT NULL DEFAULT 3
+            )
+        """)
 
-            -- Jeder gespeicherte Satz landet hier
-            -- set_type: 'warmup' | 'working'
+        _execute(conn, """
             CREATE TABLE IF NOT EXISTS workout_logs (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                id            SERIAL PRIMARY KEY,
                 exercise_name TEXT NOT NULL,
                 set_type      TEXT NOT NULL CHECK(set_type IN ('warmup','working')),
                 set_number    INTEGER NOT NULL,
                 weight_kg     REAL    NOT NULL CHECK(weight_kg >= 0),
                 reps          INTEGER NOT NULL CHECK(reps >= 0),
-                log_date      TEXT NOT NULL DEFAULT (date('now')),
-                logged_at     TEXT NOT NULL DEFAULT (datetime('now'))
-            );
+                log_date      DATE    NOT NULL DEFAULT CURRENT_DATE,
+                logged_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
 
+        _execute(conn, """
             CREATE INDEX IF NOT EXISTS idx_wl_exercise_date
-                ON workout_logs(exercise_name, log_date);
+                ON workout_logs(exercise_name, log_date)
+        """)
 
+        _execute(conn, """
             CREATE TABLE IF NOT EXISTS weight_logs (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                weight_kg  REAL NOT NULL CHECK(weight_kg > 0),
-                log_date   TEXT NOT NULL UNIQUE,
-                logged_at  TEXT NOT NULL DEFAULT (datetime('now'))
-            );
+                id        SERIAL PRIMARY KEY,
+                weight_kg REAL NOT NULL CHECK(weight_kg > 0),
+                log_date  DATE NOT NULL UNIQUE,
+                logged_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
 
+        _execute(conn, """
             CREATE INDEX IF NOT EXISTS idx_weight_date
-                ON weight_logs(log_date);
+                ON weight_logs(log_date)
         """)
 
         # Pläne einmalig seeden
         for sort_i, plan_name in enumerate(PLAN_ORDER):
-            conn.execute(
-                "INSERT OR IGNORE INTO training_plans (name, sort_order) VALUES (?,?)",
+            _execute(conn,
+                "INSERT INTO training_plans (name, sort_order) VALUES (%s, %s) ON CONFLICT (name) DO NOTHING",
                 (plan_name, sort_i)
             )
-            plan_id = conn.execute(
-                "SELECT id FROM training_plans WHERE name=?", (plan_name,)
-            ).fetchone()["id"]
+            row = _fetchone(conn, "SELECT id FROM training_plans WHERE name=%s", (plan_name,))
+            plan_id = row["id"]
 
-            # Nur seeden wenn noch keine Übungen vorhanden
-            existing = conn.execute(
-                "SELECT COUNT(*) AS c FROM plan_exercises WHERE plan_id=?", (plan_id,)
-            ).fetchone()["c"]
+            count_row = _fetchone(conn,
+                "SELECT COUNT(*) AS c FROM plan_exercises WHERE plan_id=%s", (plan_id,))
 
-            if existing == 0:
+            if count_row["c"] == 0:
                 exercises = PLAN_SEED[plan_name]
-                conn.executemany(
+                _executemany(conn,
                     """INSERT INTO plan_exercises
                        (plan_id, exercise_name, sort_order, warmup_sets, working_sets)
-                       VALUES (?,?,?,?,?)""",
+                       VALUES (%s, %s, %s, %s, %s)""",
                     [(plan_id, name, idx, wu, ws)
                      for idx, (name, wu, ws) in enumerate(exercises)]
                 )
@@ -163,31 +204,22 @@ def init_db() -> None:
 # ---------------------------------------------------------------------------
 
 def get_all_plans() -> list[str]:
-    """Gibt alle Plannamen in der definierten Reihenfolge zurück."""
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT name FROM training_plans ORDER BY sort_order ASC"
-        ).fetchall()
+        rows = _fetchall(conn,
+            "SELECT name FROM training_plans ORDER BY sort_order ASC")
     return [r["name"] for r in rows]
 
 
 def get_plan_exercises(plan_name: str) -> list[dict]:
-    """
-    Gibt alle Übungen eines Plans zurück.
-    Return: [{ exercise_name, warmup_sets, working_sets, sort_order }, ...]
-    """
     with get_connection() as conn:
-        rows = conn.execute(
-            """
+        rows = _fetchall(conn, """
             SELECT pe.exercise_name, pe.warmup_sets, pe.working_sets, pe.sort_order
             FROM plan_exercises pe
             JOIN training_plans tp ON tp.id = pe.plan_id
-            WHERE tp.name = ?
+            WHERE tp.name = %s
             ORDER BY pe.sort_order ASC
-            """,
-            (plan_name,)
-        ).fetchall()
-    return [dict(r) for r in rows]
+        """, (plan_name,))
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -195,74 +227,53 @@ def get_plan_exercises(plan_name: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def log_exercise_sets(exercise_name: str, sets: list[tuple]) -> None:
-    """
-    Speichert alle Sätze einer Übung für heute.
-    Löscht vorher alle heutigen Einträge für diese Übung (Überschreiben).
-
-    Args:
-        exercise_name: Name der Übung
-        sets: Liste von (set_type, set_number, weight_kg, reps)
-    """
-    today = date.today().isoformat()
-    now   = datetime.now().isoformat(timespec="seconds")
+    today = date.today()
+    now   = datetime.now()
 
     with get_connection() as conn:
-        # Heutige Einträge für diese Übung löschen (ermöglicht Korrekturen)
-        conn.execute(
-            "DELETE FROM workout_logs WHERE exercise_name=? AND log_date=?",
+        _execute(conn,
+            "DELETE FROM workout_logs WHERE exercise_name=%s AND log_date=%s",
             (exercise_name, today)
         )
-        conn.executemany(
+        _executemany(conn,
             """INSERT INTO workout_logs
                (exercise_name, set_type, set_number, weight_kg, reps, log_date, logged_at)
-               VALUES (?,?,?,?,?,?,?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             [(exercise_name, st, sn, wkg, r, today, now) for st, sn, wkg, r in sets]
         )
 
 
 def get_today_exercise_sets(exercise_name: str) -> list[dict]:
-    """Gibt alle heute gespeicherten Sätze für eine Übung zurück."""
-    today = date.today().isoformat()
+    today = date.today()
     with get_connection() as conn:
-        rows = conn.execute(
-            """SELECT set_type, set_number, weight_kg, reps
-               FROM workout_logs
-               WHERE exercise_name=? AND log_date=?
-               ORDER BY set_type DESC, set_number ASC""",
-            (exercise_name, today)
-        ).fetchall()
-    return [dict(r) for r in rows]
+        rows = _fetchall(conn, """
+            SELECT set_type, set_number, weight_kg, reps
+            FROM workout_logs
+            WHERE exercise_name=%s AND log_date=%s
+            ORDER BY set_type DESC, set_number ASC
+        """, (exercise_name, today))
+    return rows
 
 
 def get_last_session_sets(exercise_name: str) -> dict:
-    """
-    Gibt die Sätze der letzten (nicht heute) Trainingseinheit zurück.
-    Nützlich zum Vorbelegen der Eingabefelder.
-
-    Returns:
-        { ('warmup'|'working', set_number): {'weight_kg': x, 'reps': y} }
-    """
-    today = date.today().isoformat()
+    today = date.today()
     with get_connection() as conn:
-        # Letztes Datum dieser Übung (vor heute)
-        row = conn.execute(
-            """SELECT MAX(log_date) AS last_date
-               FROM workout_logs
-               WHERE exercise_name=? AND log_date < ?""",
-            (exercise_name, today)
-        ).fetchone()
+        row = _fetchone(conn, """
+            SELECT MAX(log_date) AS last_date
+            FROM workout_logs
+            WHERE exercise_name=%s AND log_date < %s
+        """, (exercise_name, today))
 
         if not row or not row["last_date"]:
             return {}
 
         last_date = row["last_date"]
-        sets = conn.execute(
-            """SELECT set_type, set_number, weight_kg, reps
-               FROM workout_logs
-               WHERE exercise_name=? AND log_date=?
-               ORDER BY set_type DESC, set_number ASC""",
-            (exercise_name, last_date)
-        ).fetchall()
+        sets = _fetchall(conn, """
+            SELECT set_type, set_number, weight_kg, reps
+            FROM workout_logs
+            WHERE exercise_name=%s AND log_date=%s
+            ORDER BY set_type DESC, set_number ASC
+        """, (exercise_name, last_date))
 
     return {
         (r["set_type"], r["set_number"]): {"weight_kg": r["weight_kg"], "reps": r["reps"]}
@@ -271,14 +282,12 @@ def get_last_session_sets(exercise_name: str) -> dict:
 
 
 def is_exercise_done_today(exercise_name: str) -> bool:
-    """Gibt True zurück wenn für diese Übung heute schon Sätze gespeichert wurden."""
-    today = date.today().isoformat()
+    today = date.today()
     with get_connection() as conn:
-        count = conn.execute(
-            "SELECT COUNT(*) AS c FROM workout_logs WHERE exercise_name=? AND log_date=?",
-            (exercise_name, today)
-        ).fetchone()["c"]
-    return count > 0
+        row = _fetchone(conn,
+            "SELECT COUNT(*) AS c FROM workout_logs WHERE exercise_name=%s AND log_date=%s",
+            (exercise_name, today))
+    return row["c"] > 0
 
 
 # ---------------------------------------------------------------------------
@@ -286,65 +295,49 @@ def is_exercise_done_today(exercise_name: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def get_exercise_history(exercise_name: str, weeks: int = 4) -> list[dict]:
-    """
-    Gibt die Trainingshistory der letzten N Wochen zurück.
-    Pro Trainingstag: max Gewicht, Gesamtvolumen, Arbeitssätze.
-
-    Returns:
-        [{ log_date, max_weight, total_volume, working_sets_count, avg_reps }]
-    """
-    since = (date.today() - timedelta(weeks=weeks)).isoformat()
+    since = date.today() - timedelta(weeks=weeks)
     with get_connection() as conn:
-        rows = conn.execute(
-            """
+        rows = _fetchall(conn, """
             SELECT
-                log_date,
-                MAX(CASE WHEN set_type='working' THEN weight_kg ELSE 0 END) AS max_weight,
-                ROUND(SUM(weight_kg * reps), 0)                              AS total_volume,
-                SUM(CASE WHEN set_type='working' THEN 1 ELSE 0 END)         AS working_sets_count,
-                ROUND(AVG(CASE WHEN set_type='working' THEN reps END), 1)   AS avg_reps
+                log_date::text                                                          AS log_date,
+                MAX(CASE WHEN set_type='working' THEN weight_kg ELSE 0 END)            AS max_weight,
+                ROUND(CAST(SUM(weight_kg * reps) AS numeric), 0)                       AS total_volume,
+                SUM(CASE WHEN set_type='working' THEN 1 ELSE 0 END)                    AS working_sets_count,
+                ROUND(CAST(AVG(CASE WHEN set_type='working' THEN reps END) AS numeric), 1) AS avg_reps
             FROM workout_logs
-            WHERE exercise_name=? AND log_date >= ?
+            WHERE exercise_name=%s AND log_date >= %s
             GROUP BY log_date
             ORDER BY log_date DESC
-            """,
-            (exercise_name, since)
-        ).fetchall()
-    return [dict(r) for r in rows]
+        """, (exercise_name, since))
+    return rows
 
 
 def get_all_trained_exercises(weeks: int = 4) -> list[str]:
-    """Gibt alle Übungen zurück, die in den letzten N Wochen trainiert wurden."""
-    since = (date.today() - timedelta(weeks=weeks)).isoformat()
+    since = date.today() - timedelta(weeks=weeks)
     with get_connection() as conn:
-        rows = conn.execute(
-            """SELECT DISTINCT exercise_name
-               FROM workout_logs
-               WHERE log_date >= ?
-               ORDER BY exercise_name ASC""",
-            (since,)
-        ).fetchall()
+        rows = _fetchall(conn, """
+            SELECT DISTINCT exercise_name
+            FROM workout_logs
+            WHERE log_date >= %s
+            ORDER BY exercise_name ASC
+        """, (since,))
     return [r["exercise_name"] for r in rows]
 
 
 def get_max_weight_for_exercise(exercise_name: str) -> float | None:
-    """Gibt das höchste jemals gehobene Gewicht für eine Übung zurück."""
     with get_connection() as conn:
-        row = conn.execute(
-            """SELECT MAX(weight_kg) AS max_w
-               FROM workout_logs
-               WHERE exercise_name=? AND set_type='working'""",
-            (exercise_name,)
-        ).fetchone()
+        row = _fetchone(conn, """
+            SELECT MAX(weight_kg) AS max_w
+            FROM workout_logs
+            WHERE exercise_name=%s AND set_type='working'
+        """, (exercise_name,))
     return row["max_w"] if row else None
 
 
 def get_training_streak() -> dict:
-    """Berechnet den aktuellen Trainings-Streak (aufeinanderfolgende Trainingstage)."""
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT log_date FROM workout_logs ORDER BY log_date DESC"
-        ).fetchall()
+        rows = _fetchall(conn,
+            "SELECT DISTINCT log_date::text AS log_date FROM workout_logs ORDER BY log_date DESC")
 
     if not rows:
         return {"current_streak": 0, "longest_streak": 0, "last_training_date": None}
@@ -380,36 +373,44 @@ def get_training_streak() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Körpergewicht (unverändert)
+# Körpergewicht
 # ---------------------------------------------------------------------------
 
 def log_body_weight(weight_kg: float, log_date: str | None = None) -> None:
     if log_date is None:
-        log_date = date.today().isoformat()
-    now = datetime.now().isoformat(timespec="seconds")
+        log_date = date.today()
+    else:
+        log_date = date.fromisoformat(log_date)
+    now = datetime.now()
+
     with get_connection() as conn:
-        conn.execute(
-            """INSERT INTO weight_logs (weight_kg, log_date, logged_at) VALUES (?,?,?)
-               ON CONFLICT(log_date) DO UPDATE SET weight_kg=excluded.weight_kg,
-                                                    logged_at=excluded.logged_at""",
-            (weight_kg, log_date, now)
-        )
+        _execute(conn, """
+            INSERT INTO weight_logs (weight_kg, log_date, logged_at)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (log_date) DO UPDATE
+                SET weight_kg = EXCLUDED.weight_kg,
+                    logged_at = EXCLUDED.logged_at
+        """, (weight_kg, log_date, now))
 
 
 def get_weight_history(weeks: int = 16) -> list[dict]:
-    since = (date.today() - timedelta(weeks=weeks)).isoformat()
+    since = date.today() - timedelta(weeks=weeks)
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT log_date, weight_kg FROM weight_logs WHERE log_date>=? ORDER BY log_date ASC",
-            (since,)
-        ).fetchall()
-    return [dict(r) for r in rows]
+        rows = _fetchall(conn, """
+            SELECT log_date::text AS log_date, weight_kg
+            FROM weight_logs
+            WHERE log_date >= %s
+            ORDER BY log_date ASC
+        """, (since,))
+    return rows
 
 
 def get_last_two_weights() -> tuple:
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT log_date, weight_kg FROM weight_logs ORDER BY log_date DESC LIMIT 2"
-        ).fetchall()
-    entries = [dict(r) for r in rows]
-    return (entries[0] if entries else None, entries[1] if len(entries) > 1 else None)
+        rows = _fetchall(conn, """
+            SELECT log_date::text AS log_date, weight_kg
+            FROM weight_logs
+            ORDER BY log_date DESC
+            LIMIT 2
+        """)
+    return (rows[0] if rows else None, rows[1] if len(rows) > 1 else None)
