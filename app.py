@@ -28,12 +28,9 @@ from styles import get_css, streak_card_html, COLORS
 # Init
 # ---------------------------------------------------------------------------
 
-@st.cache_resource
-def _init_db_once():
+if "db_initialized" not in st.session_state:
     db.init_db()
-    return True
-
-_init_db_once()
+    st.session_state.db_initialized = True
 st.markdown(get_css(), unsafe_allow_html=True)
 
 # Zusätzliches CSS speziell für v2
