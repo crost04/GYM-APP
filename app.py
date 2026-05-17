@@ -282,17 +282,7 @@ with tab_train:
             card_class = "exercise-card done" if already_done else "exercise-card"
             done_icon  = f'<span style="color:{COLORS["accent_green"]};font-size:1rem;">✓</span>' if already_done else ""
 
-            st.markdown(f"""
-            <div class="{card_class}">
-                <div style="display:flex;justify-content:space-between;align-items:center;
-                            margin-bottom:10px;">
-                    <span style="font-size:0.95rem;font-weight:800;
-                                 color:{COLORS['text_primary']};">{ex_name}</span>
-                    {done_icon}
-                </div>
-            """, unsafe_allow_html=True)
-
-            # Wenn heute schon erledigt: kompakte Anzeige der gespeicherten Werte
+            # Wenn heute schon erledigt: komplette Karte als ein HTML-Block
             if already_done and today_sets:
                 rows_html = ""
                 for s in today_sets:
@@ -307,13 +297,35 @@ with tab_train:
                         </span>
                     </div>
                     """
-                st.markdown(rows_html, unsafe_allow_html=True)
+                st.markdown(f"""
+                <div class="{card_class}">
+                    <div style="display:flex;justify-content:space-between;align-items:center;
+                                margin-bottom:10px;">
+                        <span style="font-size:0.95rem;font-weight:800;
+                                     color:{COLORS['text_primary']};">{ex_name}</span>
+                        {done_icon}
+                    </div>
+                    {rows_html}
+                </div>
+                """, unsafe_allow_html=True)
 
-                # Trotzdem Bearbeiten erlauben
+                # Bearbeiten-Button außerhalb der HTML-Karte
                 if st.button(f"✏️ Bearbeiten", key=f"edit_{ex_name}"):
                     db.log_exercise_sets(ex_name, [])  # Löscht heutige Einträge
                     st.rerun()
                 continue
+
+            # Noch nicht erledigt: Header als geschlossener Block, dann Form
+            st.markdown(f"""
+            <div class="{card_class}">
+                <div style="display:flex;justify-content:space-between;align-items:center;
+                            margin-bottom:10px;">
+                    <span style="font-size:0.95rem;font-weight:800;
+                                 color:{COLORS['text_primary']};">{ex_name}</span>
+                    {done_icon}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
             # --- Eingabe-Formular ---
             with st.form(key=f"form_{ex_name}", clear_on_submit=False):
