@@ -315,20 +315,14 @@ with tab_train:
                     st.rerun()
                 continue
 
-            # Noch nicht erledigt: Header als geschlossener Block, dann Form
-            st.markdown(f"""
-            <div class="{card_class}">
-                <div style="display:flex;justify-content:space-between;align-items:center;
-                            margin-bottom:10px;">
-                    <span style="font-size:0.95rem;font-weight:800;
-                                 color:{COLORS['text_primary']};">{ex_name}</span>
-                    {done_icon}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            # --- Eingabe-Formular ---
+            # --- Eingabe-Formular (Titel direkt drin, kein externer HTML-Block) ---
             with st.form(key=f"form_{ex_name}", clear_on_submit=False):
+                st.markdown(
+                    f'<div style="font-size:0.95rem;font-weight:800;'
+                    f'color:{COLORS["text_primary"]};margin-bottom:10px;">'
+                    f'{ex_name}</div>',
+                    unsafe_allow_html=True,
+                )
 
                 all_set_inputs = []
 
