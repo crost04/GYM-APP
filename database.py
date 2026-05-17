@@ -211,6 +211,7 @@ def init_db() -> None:
 # Pläne & Übungen lesen
 # ---------------------------------------------------------------------------
 
+@st.cache_data(ttl=600)
 def get_all_plans() -> list[str]:
     with get_connection() as conn:
         rows = _fetchall(conn,
@@ -218,6 +219,7 @@ def get_all_plans() -> list[str]:
     return [r["name"] for r in rows]
 
 
+@st.cache_data(ttl=600)
 def get_plan_exercises(plan_name: str) -> list[dict]:
     with get_connection() as conn:
         rows = _fetchall(conn, """
@@ -247,10 +249,18 @@ def log_exercise_sets(exercise_name: str, sets: list[tuple]) -> None:
             """INSERT INTO workout_logs
                (exercise_name, set_type, set_number, weight_kg, reps, log_date, logged_at)
                VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-            [(exercise_name, st, sn, wkg, r, today, now) for st, sn, wkg, r in sets]
+            [(exercise_name, stype, sn, wkg, r, today, now) for stype, sn, wkg, r in sets]
         )
+    # Cache nach Schreibvorgang leeren
+    get_today_exercise_sets.clear()
+    is_exercise_done_today.clear()
+    get_training_streak.clear()
+    get_max_weight_for_exercise.clear()
+    get_exercise_history.clear()
+    get_all_trained_exercises.clear()
 
 
+@st.cache_data(ttl=20)
 def get_today_exercise_sets(exercise_name: str) -> list[dict]:
     today = date.today()
     with get_connection() as conn:
@@ -263,6 +273,7 @@ def get_today_exercise_sets(exercise_name: str) -> list[dict]:
     return rows
 
 
+@st.cache_data(ttl=120)
 def get_last_session_sets(exercise_name: str) -> dict:
     today = date.today()
     with get_connection() as conn:
@@ -289,6 +300,7 @@ def get_last_session_sets(exercise_name: str) -> dict:
     }
 
 
+@st.cache_data(ttl=20)
 def is_exercise_done_today(exercise_name: str) -> bool:
     today = date.today()
     with get_connection() as conn:
@@ -302,6 +314,7 @@ def is_exercise_done_today(exercise_name: str) -> bool:
 # Progress / History
 # ---------------------------------------------------------------------------
 
+@st.cache_data(ttl=60)
 def get_exercise_history(exercise_name: str, weeks: int = 4) -> list[dict]:
     since = date.today() - timedelta(weeks=weeks)
     with get_connection() as conn:
@@ -320,6 +333,7 @@ def get_exercise_history(exercise_name: str, weeks: int = 4) -> list[dict]:
     return rows
 
 
+@st.cache_data(ttl=60)
 def get_all_trained_exercises(weeks: int = 4) -> list[str]:
     since = date.today() - timedelta(weeks=weeks)
     with get_connection() as conn:
@@ -332,6 +346,7 @@ def get_all_trained_exercises(weeks: int = 4) -> list[str]:
     return [r["exercise_name"] for r in rows]
 
 
+@st.cache_data(ttl=60)
 def get_max_weight_for_exercise(exercise_name: str) -> float | None:
     with get_connection() as conn:
         row = _fetchone(conn, """
@@ -342,6 +357,7 @@ def get_max_weight_for_exercise(exercise_name: str) -> float | None:
     return row["max_w"] if row else None
 
 
+@st.cache_data(ttl=30)
 def get_training_streak() -> dict:
     with get_connection() as conn:
         rows = _fetchall(conn,
@@ -399,8 +415,12 @@ def log_body_weight(weight_kg: float, log_date: str | None = None) -> None:
                 SET weight_kg = EXCLUDED.weight_kg,
                     logged_at = EXCLUDED.logged_at
         """, (weight_kg, log_date, now))
+    # Cache nach Schreibvorgang leeren
+    get_weight_history.clear()
+    get_last_two_weights.clear()
 
 
+@st.cache_data(ttl=60)
 def get_weight_history(weeks: int = 16) -> list[dict]:
     since = date.today() - timedelta(weeks=weeks)
     with get_connection() as conn:
@@ -413,6 +433,7 @@ def get_weight_history(weeks: int = 16) -> list[dict]:
     return rows
 
 
+@st.cache_data(ttl=60)
 def get_last_two_weights() -> tuple:
     with get_connection() as conn:
         rows = _fetchall(conn, """
