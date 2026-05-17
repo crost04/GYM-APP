@@ -192,8 +192,12 @@ st.markdown(f"""
 
 # Streak
 streak = db.get_training_streak()
-st.markdown(streak_card_html(streak["current_streak"], streak["longest_streak"]),
-            unsafe_allow_html=True)
+st.markdown(streak_card_html(
+    sessions_this_week   = streak["sessions_this_week"],
+    sessions_last_week   = streak["sessions_last_week"],
+    weekly_streak        = streak["weekly_streak"],
+    longest_weekly_streak= streak["longest_weekly_streak"],
+), unsafe_allow_html=True)
 st.markdown(f'<div style="height:1px;background:linear-gradient(90deg,transparent,{COLORS["border"]},transparent);margin:14px 0;"></div>', unsafe_allow_html=True)
 
 

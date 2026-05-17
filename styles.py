@@ -562,23 +562,65 @@ def set_row_html(set_number: int, weight_kg: float, reps: int, is_pr: bool = Fal
     """
 
 
-def streak_card_html(current: int, longest: int) -> str:
-    """Rendert die Streak-Karte mit aktuellem und bestem Wert."""
-    flame = "🔥" * min(current, 5) if current > 0 else "💤"
+def streak_card_html(sessions_this_week: int, sessions_last_week: int,
+                     weekly_streak: int, longest_weekly_streak: int) -> str:
+    """Rendert die Wochen-Streak-Karte."""
+    if weekly_streak >= 4:
+        flame = "🔥🔥🔥"
+    elif weekly_streak >= 2:
+        flame = "🔥🔥"
+    elif weekly_streak >= 1:
+        flame = "🔥"
+    else:
+        flame = "💤"
 
-    return f"""
-    <div class="gym-card" style="text-align: center;">
-        <div style="color: {COLORS['text_secondary']}; font-size: 0.75rem; font-weight: 700;
-                    text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;">
-            Trainings-Streak
-        </div>
-        <div style="font-size: 3rem; line-height: 1;">{flame}</div>
-        <div class="streak-number" style="margin: 6px 0;">{current}</div>
-        <div style="color: {COLORS['text_secondary']}; font-size: 0.85rem;">
-            {"Tag" if current == 1 else "Tage"} in Folge
-        </div>
-        <div style="color: {COLORS['text_muted']}; font-size: 0.75rem; margin-top: 8px;">
-            Bestleistung: {longest} {"Tag" if longest == 1 else "Tage"}
-        </div>
-    </div>
-    """
+    # Dots für diese Woche (max 6 Einheiten dargestellt)
+    max_dots = 6
+    dots_html = ""
+    for i in range(max_dots):
+        filled = i < sessions_this_week
+        col = COLORS["accent_green"] if filled else COLORS["border"]
+        dots_html += (
+            f'<div style="width:10px;height:10px;border-radius:50%;'
+            f'background:{col};margin:0 3px;"></div>'
+        )
+
+    delta_color = COLORS["accent_green"] if sessions_this_week >= sessions_last_week else COLORS["accent_orange"]
+    delta_text  = (f'+{sessions_this_week - sessions_last_week}' if sessions_this_week >= sessions_last_week
+                   else str(sessions_this_week - sessions_last_week))
+    delta_label = f'vs. letzte Woche ({sessions_last_week} Einh.)'
+
+    return (
+        f'<div class="gym-card">'
+        f'<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+        # Linke Seite: Wochenzähler
+        f'<div>'
+        f'<div style="color:{COLORS["text_secondary"]};font-size:0.72rem;font-weight:700;'
+        f'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Diese Woche</div>'
+        f'<div style="font-size:2.6rem;font-weight:900;color:{COLORS["text_primary"]};line-height:1;">'
+        f'{sessions_this_week}</div>'
+        f'<div style="color:{COLORS["text_muted"]};font-size:0.78rem;margin-top:2px;">'
+        f'Einheit{"" if sessions_this_week == 1 else "en"}</div>'
+        f'<div style="color:{delta_color};font-size:0.72rem;font-weight:700;margin-top:4px;">'
+        f'{delta_text} {delta_label}</div>'
+        f'</div>'
+        # Rechte Seite: Wochen-Streak
+        f'<div style="text-align:right;">'
+        f'<div style="font-size:1.6rem;line-height:1;">{flame}</div>'
+        f'<div style="font-size:1.8rem;font-weight:900;color:{COLORS["accent_orange"]};line-height:1.1;">'
+        f'{weekly_streak}</div>'
+        f'<div style="color:{COLORS["text_muted"]};font-size:0.72rem;">'
+        f'{"Woche" if weekly_streak == 1 else "Wochen"} aktiv</div>'
+        f'<div style="color:{COLORS["text_muted"]};font-size:0.68rem;margin-top:2px;">'
+        f'Best: {longest_weekly_streak} {"Wo." if longest_weekly_streak != 1 else "Wo."}</div>'
+        f'</div>'
+        f'</div>'
+        # Dots-Reihe
+        f'<div style="display:flex;align-items:center;margin-top:12px;'
+        f'padding-top:10px;border-top:1px solid {COLORS["border"]};">'
+        f'<span style="color:{COLORS["text_muted"]};font-size:0.65rem;margin-right:8px;'
+        f'font-weight:700;text-transform:uppercase;">Mo–Sa</span>'
+        f'{dots_html}'
+        f'</div>'
+        f'</div>'
+    )

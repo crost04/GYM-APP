@@ -370,35 +370,59 @@ def get_training_streak() -> dict:
         rows = _fetchall(conn,
             "SELECT DISTINCT log_date::text AS log_date FROM workout_logs ORDER BY log_date DESC")
 
+    empty = {
+        "sessions_this_week": 0,
+        "sessions_last_week": 0,
+        "weekly_streak": 0,
+        "longest_weekly_streak": 0,
+        "last_training_date": None,
+    }
     if not rows:
-        return {"current_streak": 0, "longest_streak": 0, "last_training_date": None}
+        return empty
 
     training_dates = [date.fromisoformat(r["log_date"]) for r in rows]
     today = date.today()
 
-    # Aktuelle Streak
-    current_streak = 0
-    check_date = today
-    for d in training_dates:
-        if d == check_date or d == check_date - timedelta(days=1):
-            current_streak += 1
-            check_date = d - timedelta(days=1) if d != check_date else check_date - timedelta(days=1)
-        elif d < check_date - timedelta(days=1):
+    # Montag dieser und letzter Woche
+    this_monday = today - timedelta(days=today.weekday())
+    last_monday = this_monday - timedelta(weeks=1)
+
+    sessions_this_week = sum(1 for d in training_dates if d >= this_monday)
+    sessions_last_week = sum(1 for d in training_dates if last_monday <= d < this_monday)
+
+    # Wochen-Streak: wie viele Wochen in Folge (inkl. akt. Woche) mindestens 1 Training
+    trained_weeks = set(d.strftime("%G-%V") for d in training_dates)  # ISO-Woche
+
+    weekly_streak = 0
+    check = today
+    while True:
+        week_key = check.strftime("%G-%V")
+        if week_key in trained_weeks:
+            weekly_streak += 1
+            check -= timedelta(weeks=1)
+        else:
             break
 
-    # Längste Streak
-    sorted_dates = sorted(training_dates)
-    longest_streak = temp = 1
-    for i in range(1, len(sorted_dates)):
-        if sorted_dates[i] - sorted_dates[i - 1] == timedelta(days=1):
+    # Längste Wochen-Streak
+    sorted_weeks = sorted(trained_weeks)
+    longest_weekly_streak = temp = 1 if sorted_weeks else 0
+    for i in range(1, len(sorted_weeks)):
+        # Prüfe ob aufeinanderfolgende ISO-Wochen
+        y1, w1 = map(int, sorted_weeks[i - 1].split("-"))
+        y2, w2 = map(int, sorted_weeks[i].split("-"))
+        total1 = y1 * 53 + w1
+        total2 = y2 * 53 + w2
+        if total2 - total1 == 1:
             temp += 1
-            longest_streak = max(longest_streak, temp)
+            longest_weekly_streak = max(longest_weekly_streak, temp)
         else:
             temp = 1
 
     return {
-        "current_streak": current_streak,
-        "longest_streak": longest_streak,
+        "sessions_this_week": sessions_this_week,
+        "sessions_last_week": sessions_last_week,
+        "weekly_streak": weekly_streak,
+        "longest_weekly_streak": longest_weekly_streak,
         "last_training_date": training_dates[0].isoformat() if training_dates else None,
     }
 
