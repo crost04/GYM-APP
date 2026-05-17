@@ -12,5 +12,11 @@ __pycache__/
 # Mac
 .DS_Store
 
+# Linux FUSE Temp-Dateien
+.fuse_hidden*
+
+# Streamlit Secrets (niemals in Git!)
+.streamlit/secrets.toml
+
 # Launcher (nur lokal nötig)
 *.command
