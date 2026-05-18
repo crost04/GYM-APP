@@ -20,7 +20,7 @@ from datetime import date, datetime, timedelta
 PLAN_SEED = {
     "Push 💪": [
         ("Schrägbank Maschine",           1, 3),
-        ("Flachbank Kurzhantel",           1, 3),
+        ("Brustpresse",                    1, 3),
         ("Butterfly",                      1, 3),
         ("Schultern Seitheben Kurzhantel", 1, 2),
         ("Schultern Seitheben Maschine",   0, 3),
@@ -212,6 +212,25 @@ def init_db() -> None:
                     [(plan_id, name, idx, wu, ws)
                      for idx, (name, wu, ws) in enumerate(exercises)]
                 )
+
+
+# ---------------------------------------------------------------------------
+# Migrations – einmalige Daten-Korrekturen
+# ---------------------------------------------------------------------------
+
+def run_migrations() -> None:
+    """Führt einmalige Umbenennungen / Fixes in der DB durch."""
+    renames = [
+        ("Flachbank Kurzhantel", "Brustpresse"),
+    ]
+    with get_connection() as conn:
+        for old_name, new_name in renames:
+            _execute(conn,
+                "UPDATE plan_exercises SET exercise_name=%s WHERE exercise_name=%s",
+                (new_name, old_name))
+            _execute(conn,
+                "UPDATE workout_logs SET exercise_name=%s WHERE exercise_name=%s",
+                (new_name, old_name))
 
 
 # ---------------------------------------------------------------------------

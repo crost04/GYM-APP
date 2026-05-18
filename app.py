@@ -30,6 +30,7 @@ from styles import get_css, streak_card_html, COLORS
 
 if "db_initialized" not in st.session_state:
     db.init_db()
+    db.run_migrations()
     st.session_state.db_initialized = True
 st.markdown(get_css(), unsafe_allow_html=True)
 
@@ -216,7 +217,9 @@ with tab_train:
 
     # --- Plan-Auswahl (große Buttons) ---
     if "selected_plan" not in st.session_state:
-        st.session_state["selected_plan"] = None
+        # Fallback: letzten Plan aus DB laden (überlebt st.rerun() auf Cloud)
+        saved_plan = db.get_setting("active_plan")
+        st.session_state["selected_plan"] = saved_plan if saved_plan else None
 
     plans = db.get_all_plans()
 
@@ -236,6 +239,7 @@ with tab_train:
             with col:
                 if st.button(plan, key=f"plan_btn_{plan}", use_container_width=True):
                     st.session_state["selected_plan"] = plan
+                    db.set_setting("active_plan", plan)  # in DB sichern
                     st.rerun()
 
     else:
@@ -261,6 +265,7 @@ with tab_train:
         # Plan wechseln
         if st.button("← Plan wechseln", key="change_plan_btn"):
             st.session_state["selected_plan"] = None
+            db.set_setting("active_plan", "")  # in DB zurücksetzen
             st.rerun()
 
         # --- Übungskarten ---
@@ -350,7 +355,7 @@ with tab_train:
                     for i in range(1, warmup_sets + 1):
                         prev = last_session.get(("warmup", i), {})
                         default_w = prev.get("weight_kg", 0.0)
-                        default_r = prev.get("reps", 15)
+                        default_r = prev.get("reps", 12)
 
                         col_w, col_r = st.columns([3, 2])
                         with col_w:
