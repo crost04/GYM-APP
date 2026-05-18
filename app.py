@@ -267,6 +267,9 @@ with tab_train:
             db.set_setting("active_plan", "")  # in DB zurücksetzen
             st.rerun()
 
+        # Zeitbasierte Übungen – "Reps" wird durch "Sekunden" ersetzt
+        TIMED_EXERCISES = {"Planks"}
+
         # --- Übungskarten ---
         for ex in exercises:
             ex_name      = ex["exercise_name"]
@@ -287,15 +290,18 @@ with tab_train:
             # Wenn heute schon erledigt: komplette Karte als ein HTML-Block
             if already_done and today_sets:
                 rows_html = ""
+                is_timed = ex_name in TIMED_EXERCISES
                 for s in today_sets:
                     tag   = "🔸 Aufwärm" if s["set_type"] == "warmup" else f"Satz {s['set_number']}"
                     color = COLORS["accent_orange"] if s["set_type"] == "warmup" else COLORS["accent_green"]
+                    val_str = (f'{s["reps"]} Sek.' if is_timed
+                               else f'{s["weight_kg"]} kg × {s["reps"]} Reps')
                     rows_html += (
                         f'<div style="display:flex;justify-content:space-between;'
                         f'padding:6px 0;border-bottom:1px solid {COLORS["border"]};">'
                         f'<span style="color:{COLORS["text_muted"]};font-size:0.82rem;">{tag}</span>'
                         f'<span style="color:{color};font-weight:700;font-size:0.9rem;">'
-                        f'{s["weight_kg"]} kg × {s["reps"]} Reps</span></div>'
+                        f'{val_str}</span></div>'
                     )
                 card_html = (
                     f'<div class="{card_class}">'
@@ -376,39 +382,56 @@ with tab_train:
                         all_set_inputs.append(("warmup", i, w, r))
 
                 # Arbeitssätze
+                is_timed = ex_name in TIMED_EXERCISES
                 if working_sets > 0:
                     st.markdown(f'<span class="working-tag">💪 Arbeitssatz{"" if working_sets == 1 else "e"} ({working_sets}×)</span>',
                                 unsafe_allow_html=True)
                     for i in range(1, working_sets + 1):
                         prev = last_session.get(("working", i), {})
-                        # Fallback: erstes Working-Set als Default für alle
                         if not prev and last_session:
-                            first_working = last_session.get(("working", 1), {})
-                            prev = first_working
+                            prev = last_session.get(("working", 1), {})
                         default_w = prev.get("weight_kg", 0.0)
-                        default_r = prev.get("reps", 10)
+                        default_r = prev.get("reps", 60 if is_timed else 10)
 
-                        col_label, col_w, col_r = st.columns([1, 3, 2])
-                        with col_label:
-                            st.markdown(
-                                f'<div style="padding-top:32px;color:{COLORS["text_muted"]};'
-                                f'font-size:0.78rem;font-weight:700;">#{i}</div>',
-                                unsafe_allow_html=True,
-                            )
-                        with col_w:
-                            w = st.number_input(
-                                f"kg",
-                                min_value=0.0, max_value=500.0,
-                                value=float(default_w), step=2.5, format="%.1f",
-                                key=f"{ex_name}_ws{i}_w",
-                            )
-                        with col_r:
-                            r = st.number_input(
-                                f"Reps",
-                                min_value=0, max_value=200,
-                                value=int(default_r), step=1,
-                                key=f"{ex_name}_ws{i}_r",
-                            )
+                        if is_timed:
+                            # Zeitbasiert: nur Sekunden, kein Gewicht
+                            col_label, col_r = st.columns([1, 5])
+                            with col_label:
+                                st.markdown(
+                                    f'<div style="padding-top:32px;color:{COLORS["text_muted"]};'
+                                    f'font-size:0.78rem;font-weight:700;">#{i}</div>',
+                                    unsafe_allow_html=True,
+                                )
+                            with col_r:
+                                r = st.number_input(
+                                    "⏱ Sekunden",
+                                    min_value=0, max_value=600,
+                                    value=int(default_r), step=5,
+                                    key=f"{ex_name}_ws{i}_r",
+                                )
+                            w = 0.0  # kein Gewicht bei Zeitübungen
+                        else:
+                            col_label, col_w, col_r = st.columns([1, 3, 2])
+                            with col_label:
+                                st.markdown(
+                                    f'<div style="padding-top:32px;color:{COLORS["text_muted"]};'
+                                    f'font-size:0.78rem;font-weight:700;">#{i}</div>',
+                                    unsafe_allow_html=True,
+                                )
+                            with col_w:
+                                w = st.number_input(
+                                    "kg",
+                                    min_value=0.0, max_value=500.0,
+                                    value=float(default_w), step=2.5, format="%.1f",
+                                    key=f"{ex_name}_ws{i}_w",
+                                )
+                            with col_r:
+                                r = st.number_input(
+                                    "Reps",
+                                    min_value=0, max_value=200,
+                                    value=int(default_r), step=1,
+                                    key=f"{ex_name}_ws{i}_r",
+                                )
                         all_set_inputs.append(("working", i, w, r))
 
                 # Letzten Rekord anzeigen
