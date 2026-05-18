@@ -30,7 +30,6 @@ from styles import get_css, streak_card_html, COLORS
 
 if "db_initialized" not in st.session_state:
     db.init_db()
-    db.run_migrations()
     st.session_state.db_initialized = True
 st.markdown(get_css(), unsafe_allow_html=True)
 
