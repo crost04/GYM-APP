@@ -631,6 +631,8 @@ with tab_gewicht:
     default_weight   = latest["weight_kg"] if latest else 80.0
     saved_goal       = db.get_setting("goal_weight")
     default_goal     = float(saved_goal) if saved_goal else 75.0
+    saved_start      = db.get_setting("start_weight")
+    default_start    = float(saved_start) if saved_start else default_weight
 
     with st.form("weight_form", clear_on_submit=False):
         st.markdown(
@@ -665,28 +667,43 @@ with tab_gewicht:
         st.success("Gespeichert! Weiter so! 🔥")
         st.rerun()
 
+    # ── Einstellungen & Reset (aufgeklappt nur wenn nötig) ─────────────────
     st.markdown("---")
 
     # ── SECTION 2: Metriken & Fortschritt ──────────────────────────────────
     latest, previous = db.get_last_two_weights()
     saved_goal       = db.get_setting("goal_weight")
+    saved_start      = db.get_setting("start_weight")
 
     if latest:
         current_kg = latest["weight_kg"]
         goal_kg    = float(saved_goal) if saved_goal else None
+        # Startgewicht: explizit gesetzt oder Fallback auf ältesten DB-Eintrag
+        start_kg_setting = float(saved_start) if saved_start else None
 
         # st.metric Karten
         col1, col2 = st.columns(2)
         with col1:
-            delta_val = None
-            if previous:
-                delta_val = round(current_kg - previous["weight_kg"], 1)
+            # Delta nur anzeigen wenn tatsächlich eine Änderung vorhanden ist
+            if start_kg_setting is not None:
+                delta_vs_start = round(current_kg - start_kg_setting, 1)
+                # Badge weglassen wenn 0 – kein Unterschied zu zeigen
+                if delta_vs_start != 0.0:
+                    delta_label = f"{delta_vs_start:+.1f} kg vs. Start"
+                else:
+                    delta_label = None
+            elif previous:
+                delta_vs_start = round(current_kg - previous["weight_kg"], 1)
+                delta_label    = f"{delta_vs_start:+.1f} kg vs. Vortag" if delta_vs_start != 0.0 else None
+            else:
+                delta_vs_start = None
+                delta_label    = None
             st.metric(
                 label="⚖️ Aktuell",
                 value=f"{current_kg:.1f} kg",
-                delta=f"{delta_val:+.1f} kg" if delta_val is not None else None,
+                delta=delta_label,
                 delta_color="inverse",
-                help=f"Letzter Eintrag: {previous['log_date']}" if previous else "",
+                help="Grün = abgenommen ✅  |  Rot = zugenommen" if delta_label else "",
             )
         with col2:
             if goal_kg is not None:
@@ -701,28 +718,33 @@ with tab_gewicht:
                         delta_color="off",
                     )
 
-        # Fortschrittsbalken
-        if goal_kg is not None:
-            weight_history_prog = db.get_weight_history(weeks=52)
-            if weight_history_prog:
-                start_kg = weight_history_prog[0]["weight_kg"]
-                total_change = abs(start_kg - goal_kg)
-                done_change  = abs(start_kg - current_kg)
-                progress_pct = min(1.0, done_change / total_change) if total_change > 0 else 1.0
+        # Fortschrittsbalken – basiert auf Startgewicht-Setting, nicht altem DB-Eintrag
+        if goal_kg is not None and start_kg_setting is not None:
+            start_kg     = start_kg_setting
+            total_change = abs(start_kg - goal_kg)
+            done_change  = abs(start_kg - current_kg)
+            progress_pct = min(1.0, done_change / total_change) if total_change > 0 else 1.0
 
-                direction_ok = (goal_kg < start_kg and current_kg <= start_kg) or \
-                               (goal_kg > start_kg and current_kg >= start_kg)
-                if not direction_ok:
-                    progress_pct = 0.0
+            direction_ok = (goal_kg < start_kg and current_kg <= start_kg) or \
+                           (goal_kg > start_kg and current_kg >= start_kg)
+            if not direction_ok:
+                progress_pct = 0.0
 
-                st.markdown(
-                    f'<div style="color:{COLORS["text_muted"]};font-size:0.7rem;font-weight:700;'
-                    f'text-transform:uppercase;letter-spacing:0.07em;margin-top:12px;margin-bottom:4px;">'
-                    f'Fortschritt zum Ziel '
-                    f'<span style="float:right;color:{COLORS["text_secondary"]};">{int(progress_pct*100)} %</span></div>',
-                    unsafe_allow_html=True,
-                )
-                st.progress(progress_pct)
+            st.markdown(
+                f'<div style="color:{COLORS["text_muted"]};font-size:0.7rem;font-weight:700;'
+                f'text-transform:uppercase;letter-spacing:0.07em;margin-top:12px;margin-bottom:4px;">'
+                f'Fortschritt zum Ziel '
+                f'<span style="float:right;color:{COLORS["text_secondary"]};">{int(progress_pct*100)} %</span></div>',
+                unsafe_allow_html=True,
+            )
+            st.progress(progress_pct)
+        elif goal_kg is not None:
+            # Kein Startgewicht gesetzt: Nutzer auffordern
+            st.markdown(
+                f'<div style="color:{COLORS["accent_orange"]};font-size:0.78rem;font-weight:600;'
+                f'margin-top:10px;">📍 Bitte Startgewicht im Formular oben setzen, um den Fortschrittsbalken zu aktivieren.</div>',
+                unsafe_allow_html=True,
+            )
 
     st.markdown("---")
 
@@ -740,9 +762,14 @@ with tab_gewicht:
         saved_goal = db.get_setting("goal_weight")
         goal_kg    = float(saved_goal) if saved_goal else None
 
-        dates   = df["log_date"].dt.strftime("%Y-%m-%d").tolist()
-        weights = df["weight_kg"].tolist()
-        ma7     = df["ma7"].round(2).tolist()
+        # Deduplizieren auf Tagesebene (Datum ohne Uhrzeit)
+        df["date_str"] = df["log_date"].dt.strftime("%d.%m.")
+        df = df.drop_duplicates(subset=["date_str"]).reset_index(drop=True)
+        df["ma7"] = df["weight_kg"].rolling(window=7, min_periods=1).mean()
+
+        dates_lbl = df["date_str"].tolist()
+        weights   = df["weight_kg"].tolist()
+        ma7       = df["ma7"].round(2).tolist()
 
         all_vals = weights + ([goal_kg] if goal_kg else [])
         y_min = round(min(all_vals) - 1.5, 1)
@@ -752,7 +779,7 @@ with tab_gewicht:
 
         # Rohgewicht-Punkte (dezent)
         fig.add_trace(go.Scatter(
-            x=dates, y=weights,
+            x=dates_lbl, y=weights,
             mode="markers",
             name="Tageswert",
             marker=dict(size=5, color=COLORS["accent_blue"],
@@ -763,7 +790,7 @@ with tab_gewicht:
 
         # 7-Tage Moving Average als Hauptlinie
         fig.add_trace(go.Scatter(
-            x=dates, y=ma7,
+            x=dates_lbl, y=ma7,
             mode="lines",
             name="Ø 7 Tage",
             line=dict(color=COLORS["accent_blue"], width=3, shape="spline"),
@@ -792,9 +819,11 @@ with tab_gewicht:
             plot_bgcolor=COLORS["bg_secondary"],
             font=dict(color=COLORS["text_secondary"], family="Inter", size=11),
             margin=dict(l=8, r=8, t=44, b=8),
-            xaxis=dict(type="date", gridcolor=COLORS["border"],
+            xaxis=dict(type="category", gridcolor=COLORS["border"],
                        linecolor=COLORS["border"], tickfont=dict(size=9),
-                       tickformat="%d.%m."),
+                       tickmode="array",
+                       tickvals=dates_lbl,
+                       ticktext=dates_lbl),
             yaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"],
                        ticksuffix=" kg", tickfont=dict(size=9),
                        range=[y_min, y_max]),

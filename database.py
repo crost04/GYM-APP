@@ -490,3 +490,11 @@ def get_last_two_weights() -> tuple:
             LIMIT 2
         """)
     return (rows[0] if rows else None, rows[1] if len(rows) > 1 else None)
+
+
+def reset_weight_logs() -> None:
+    """Löscht alle Gewichts-Einträge (für Neustart nach Testphase)."""
+    with get_connection() as conn:
+        _execute(conn, "DELETE FROM weight_logs")
+    get_weight_history.clear()
+    get_last_two_weights.clear()
