@@ -30,6 +30,7 @@ from styles import get_css, streak_card_html, COLORS
 
 if "db_initialized" not in st.session_state:
     db.init_db()
+    db.run_migrations()
     st.session_state.db_initialized = True
 st.markdown(get_css(), unsafe_allow_html=True)
 
@@ -213,6 +214,13 @@ tab_train, tab_verlauf, tab_gewicht = st.tabs(["🏋️  Training", "📊  Verla
 # ╚══════════════════════════════════════════════════════════════════════════╝
 
 with tab_train:
+
+    # --- Einmaliger Fix-Button für Arme-Plan ---
+    if st.button("🔧 Arme-Plan aktualisieren", key="fix_arme"):
+        result = db.force_update_arme_plan()
+        db.get_plan_exercises.clear()
+        st.success(result)
+        st.rerun()
 
     # --- Plan-Auswahl (große Buttons) ---
     if "selected_plan" not in st.session_state:
@@ -571,8 +579,8 @@ with tab_verlauf:
                                 line=dict(width=2, color=COLORS["bg_secondary"])),
                     fill="tozeroy",
                     fillcolor=fill_col,
-                    hovertemplate=hover_fmt,
                 ))
+                fig.update_traces(hovertemplate=hover_fmt)
                 fig.update_layout(
                     title=dict(text=chart_lbl,
                                font=dict(size=13, color=COLORS["text_primary"]),
@@ -652,6 +660,7 @@ with tab_verlauf:
 with tab_gewicht:
     import pandas as _pd
     from datetime import timedelta as _td
+    from datetime import date as _date
 
     # ── SECTION 1: Eingabe-Formular ────────────────────────────────────────
     latest, previous = db.get_last_two_weights()
@@ -661,11 +670,43 @@ with tab_gewicht:
     saved_start      = db.get_setting("start_weight")
     default_start    = float(saved_start) if saved_start else default_weight
 
+    # ── Wöchentlicher Check-in Status ──────────────────────────────────────
+    today = _date.today()
+    if latest:
+        last_date = _pd.to_datetime(latest["log_date"]).date()
+        days_since = (today - last_date).days
+        # Gleiche ISO-Kalenderwoche?
+        same_week = (today.isocalendar()[:2] == last_date.isocalendar()[:2])
+        if same_week:
+            _badge_color = COLORS["accent_green"]
+            _badge_icon  = "✅"
+            _badge_text  = f"Diese Woche bereits eingetragen · vor {days_since} Tag{'en' if days_since != 1 else ''}"
+        elif days_since <= 14:
+            _badge_color = COLORS["accent_orange"]
+            _badge_icon  = "⏰"
+            _badge_text  = f"Letzte Messung vor {days_since} Tagen – Zeit für den Wochen-Check-in!"
+        else:
+            _badge_color = COLORS["accent_red"]
+            _badge_icon  = "🔴"
+            _badge_text  = f"Letzte Messung vor {days_since} Tagen – nicht vergessen!"
+    else:
+        _badge_color = COLORS["accent_blue"]
+        _badge_icon  = "👋"
+        _badge_text  = "Erste Messung eintragen und loslegen!"
+
+    st.markdown(
+        f'<div style="background:{_badge_color}18;border:1px solid {_badge_color}50;'
+        f'border-radius:14px;padding:10px 14px;margin-bottom:14px;'
+        f'color:{_badge_color};font-size:0.82rem;font-weight:700;">'
+        f'{_badge_icon} {_badge_text}</div>',
+        unsafe_allow_html=True,
+    )
+
     with st.form("weight_form", clear_on_submit=False):
         st.markdown(
             f'<div style="color:{COLORS["text_secondary"]};font-size:0.75rem;font-weight:700;'
             f'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">'
-            f'⚖️ Heutiges Gewicht eintragen</div>',
+            f'⚖️ Wöchentliches Gewicht eintragen</div>',
             unsafe_allow_html=True,
         )
 
@@ -721,7 +762,7 @@ with tab_gewicht:
                     delta_label = None
             elif previous:
                 delta_vs_start = round(current_kg - previous["weight_kg"], 1)
-                delta_label    = f"{delta_vs_start:+.1f} kg vs. Vortag" if delta_vs_start != 0.0 else None
+                delta_label    = f"{delta_vs_start:+.1f} kg vs. letzter Messung" if delta_vs_start != 0.0 else None
             else:
                 delta_vs_start = None
                 delta_label    = None
@@ -784,19 +825,19 @@ with tab_gewicht:
         df = _pd.DataFrame(weight_history)
         df["log_date"] = _pd.to_datetime(df["log_date"])
         df = df.sort_values("log_date").reset_index(drop=True)
-        df["ma7"] = df["weight_kg"].rolling(window=7, min_periods=1).mean()
-
         saved_goal = db.get_setting("goal_weight")
         goal_kg    = float(saved_goal) if saved_goal else None
 
         # Deduplizieren auf Tagesebene (Datum ohne Uhrzeit)
         df["date_str"] = df["log_date"].dt.strftime("%d.%m.")
         df = df.drop_duplicates(subset=["date_str"]).reset_index(drop=True)
-        df["ma7"] = df["weight_kg"].rolling(window=7, min_periods=1).mean()
+
+        # 4-Wochen Moving Average (sinnvoll bei wöchentlichen Messungen)
+        df["ma4w"] = df["weight_kg"].rolling(window=4, min_periods=1).mean()
 
         dates_lbl = df["date_str"].tolist()
         weights   = df["weight_kg"].tolist()
-        ma7       = df["ma7"].round(2).tolist()
+        ma4w      = df["ma4w"].round(2).tolist()
 
         all_vals = weights + ([goal_kg] if goal_kg else [])
         y_min = round(min(all_vals) - 1.5, 1)
@@ -804,26 +845,27 @@ with tab_gewicht:
 
         fig = go.Figure()
 
-        # Rohgewicht-Punkte (dezent)
+        # Wöchentliche Messpunkte als Linie + Marker
         fig.add_trace(go.Scatter(
             x=dates_lbl, y=weights,
-            mode="markers",
-            name="Tageswert",
-            marker=dict(size=5, color=COLORS["accent_blue"],
-                        opacity=0.5,
-                        line=dict(width=1, color=COLORS["bg_secondary"])),
-            hovertemplate="<b>%{y:.1f} kg</b><br>%{x}<extra>Tageswert</extra>",
+            mode="lines+markers",
+            name="Wochenmessung",
+            marker=dict(size=8, color=COLORS["accent_blue"],
+                        line=dict(width=2, color=COLORS["bg_secondary"])),
+            line=dict(color=COLORS["accent_blue"], width=2, dash="dot"),
+            hovertemplate="<b>%{y:.1f} kg</b><br>%{x}<extra>Wochenmessung</extra>",
         ))
 
-        # 7-Tage Moving Average als Hauptlinie
-        fig.add_trace(go.Scatter(
-            x=dates_lbl, y=ma7,
-            mode="lines",
-            name="Ø 7 Tage",
-            line=dict(color=COLORS["accent_blue"], width=3, shape="spline"),
-            fill="tozeroy", fillcolor="rgba(0, 212, 255, 0.08)",
-            hovertemplate="<b>Ø %{y:.1f} kg</b><br>%{x}<extra>7-Tage-Schnitt</extra>",
-        ))
+        # 4-Wochen-Trend als Hauptlinie
+        if len(weights) >= 2:
+            fig.add_trace(go.Scatter(
+                x=dates_lbl, y=ma4w,
+                mode="lines",
+                name="Ø 4 Wochen",
+                line=dict(color=COLORS["accent_green"], width=3, shape="spline"),
+                fill="tozeroy", fillcolor="rgba(0, 212, 255, 0.06)",
+                hovertemplate="<b>Ø %{y:.1f} kg</b><br>%{x}<extra>4-Wochen-Schnitt</extra>",
+            ))
 
         # Zielgewicht-Linie
         if goal_kg is not None:
@@ -839,7 +881,7 @@ with tab_gewicht:
             )
 
         fig.update_layout(
-            title=dict(text="⚖️ Gewichtsverlauf & 7-Tage-Trend",
+            title=dict(text="⚖️ Wöchentlicher Gewichtsverlauf & Trend",
                        font=dict(size=13, color=COLORS["text_primary"]),
                        x=0, xanchor="left"),
             paper_bgcolor="rgba(0,0,0,0)",
@@ -868,15 +910,15 @@ with tab_gewicht:
     weight_history = db.get_weight_history(weeks=16)
     saved_goal     = db.get_setting("goal_weight")
 
-    if saved_goal and len(weight_history) >= 3:
+    if saved_goal and len(weight_history) >= 2:
         goal_kg = float(saved_goal)
 
-        # Letzten 7–14 Tage für die Rate nutzen
+        # Letzten 8 Wochen (8 Messpunkte) für die Rate nutzen
         df_prog = _pd.DataFrame(weight_history)
         df_prog["log_date"] = _pd.to_datetime(df_prog["log_date"])
         df_prog = df_prog.sort_values("log_date").reset_index(drop=True)
 
-        window_days = min(14, len(df_prog))
+        window_days = min(8, len(df_prog))
         df_window   = df_prog.tail(window_days)
 
         d_first = df_window["log_date"].iloc[0]
@@ -910,7 +952,7 @@ with tab_gewicht:
                     f'border:1px solid {trend_color}40;border-radius:18px;padding:18px 16px;margin:4px 0 12px 0;">'
                     f'<div style="color:{trend_color};font-size:0.72rem;font-weight:800;'
                     f'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;">'
-                    f'🔮 Prognose · Letzten {window_days} Tage als Basis</div>'
+                    f'🔮 Prognose · Letzten {window_days} Messungen als Basis</div>'
                     f'<div style="display:flex;justify-content:space-between;gap:6px;text-align:center;">'
                     f'<div style="flex:1;background:{COLORS["bg_primary"]}88;border-radius:12px;padding:10px 6px;">'
                     f'<div style="font-size:1.5rem;font-weight:900;color:{trend_color};line-height:1.1;">{int(days_needed)}</div>'
@@ -939,7 +981,7 @@ with tab_gewicht:
                     f'<div style="background:{COLORS["bg_secondary"]};border:1px solid {COLORS["border"]};'
                     f'border-radius:14px;padding:14px;margin:4px 0 12px 0;'
                     f'color:{COLORS["text_muted"]};font-size:0.82rem;text-align:center;">'
-                    f'📊 Noch zu wenig Bewegung im Gewicht für eine Prognose. Trag dich täglich ein!</div>',
+                    f'📊 Noch zu wenig Bewegung im Gewicht für eine Prognose. Trag dich wöchentlich ein!</div>',
                     unsafe_allow_html=True,
                 )
     elif not saved_goal:

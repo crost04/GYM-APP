@@ -46,11 +46,11 @@ PLAN_SEED = {
         ("Planks",                         0, 3),
     ],
     "Arme 💪": [
-        ("Bizeps Curls",                   1, 3),
-        ("Preacher Curls Kurzhantel",      0, 3),
-        ("Hammer Curls an der Bank",       1, 3),
+        ("Preacher Curls Kurzhantel",      1, 3),
+        ("Bizeps Kabel Curls",             1, 3),
+        ("Hammer Curls",                   1, 3),
+        ("Trizeps über Kreuz Kabel",       1, 3),
         ("Trizeps über Kopf",              1, 3),
-        ("Trizeps Kreuz Kabel",            1, 3),
         ("Trizeps drücken Kabel",          1, 3),
         ("Butterfly Reverse",              1, 3),
     ],
@@ -221,7 +221,9 @@ def init_db() -> None:
 def run_migrations() -> None:
     """Führt einmalige Umbenennungen / Fixes in der DB durch."""
     renames = [
-        ("Flachbank Kurzhantel", "Brustpresse"),
+        ("Flachbank Kurzhantel",     "Brustpresse"),
+        ("Hammer Curls an der Bank", "Hammer Curls"),
+        ("Trizeps Kreuz Kabel",      "Trizeps über Kreuz Kabel"),
     ]
     with get_connection() as conn:
         for old_name, new_name in renames:
@@ -231,6 +233,59 @@ def run_migrations() -> None:
             _execute(conn,
                 "UPDATE workout_logs SET exercise_name=%s WHERE exercise_name=%s",
                 (new_name, old_name))
+
+        # --- Migration: Arme-Plan komplett neu aufsetzen (v3) ---
+        try:
+            already = _fetchone(conn,
+                "SELECT value FROM app_settings WHERE key='migration_arme_v3'")
+            if not already:
+                plan_row = _fetchone(conn,
+                    "SELECT id FROM training_plans WHERE name LIKE 'Arme%'")
+                if plan_row:
+                    plan_id = plan_row["id"]
+                    _execute(conn,
+                        "DELETE FROM plan_exercises WHERE plan_id=%s", (plan_id,))
+                    new_exercises = PLAN_SEED["Arme 💪"]
+                    _executemany(conn,
+                        """INSERT INTO plan_exercises
+                           (plan_id, exercise_name, sort_order, warmup_sets, working_sets)
+                           VALUES (%s, %s, %s, %s, %s)""",
+                        [(plan_id, name, idx, wu, ws)
+                         for idx, (name, wu, ws) in enumerate(new_exercises)]
+                    )
+                    _execute(conn,
+                        "INSERT INTO app_settings (key, value) VALUES ('migration_arme_v3', 'done')"
+                        " ON CONFLICT (key) DO NOTHING"
+                    )
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Einmaliger manueller Fix: Arme-Plan in DB direkt ersetzen
+# ---------------------------------------------------------------------------
+
+def force_update_arme_plan() -> str:
+    """Löscht und ersetzt alle Übungen des Arme-Plans. Gibt Status-String zurück."""
+    try:
+        with get_connection() as conn:
+            plan_row = _fetchone(conn,
+                "SELECT id, name FROM training_plans WHERE name LIKE 'Arme%'")
+            if not plan_row:
+                return "❌ Arme-Plan nicht gefunden!"
+            plan_id = plan_row["id"]
+            _execute(conn, "DELETE FROM plan_exercises WHERE plan_id=%s", (plan_id,))
+            new_exercises = PLAN_SEED["Arme 💪"]
+            _executemany(conn,
+                """INSERT INTO plan_exercises
+                   (plan_id, exercise_name, sort_order, warmup_sets, working_sets)
+                   VALUES (%s, %s, %s, %s, %s)""",
+                [(plan_id, name, idx, wu, ws)
+                 for idx, (name, wu, ws) in enumerate(new_exercises)]
+            )
+            return f"✅ Arme-Plan aktualisiert! ({len(new_exercises)} Übungen)"
+    except Exception as e:
+        return f"❌ Fehler: {e}"
 
 
 # ---------------------------------------------------------------------------
