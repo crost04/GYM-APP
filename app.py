@@ -562,13 +562,20 @@ with tab_verlauf:
                     hover_fmt = "<b>~%{y:.1f} kg 1RM</b><br>%{x}<extra></extra>"
 
                 # ── Chart ──────────────────────────────────────────────────
+                # Y-Achse eng um die Daten legen (± 10% Padding)
+                y_min_val = min(y_vals)
+                y_max_val = max(y_vals)
+                y_pad     = max((y_max_val - y_min_val) * 0.25, y_max_val * 0.05)
+                y_lo      = max(0, y_min_val - y_pad)
+                y_hi      = y_max_val + y_pad
+
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(
                     x=dates_asc, y=y_vals,
                     mode="lines+markers",
                     name=chart_metric,
-                    line=dict(color=line_col, width=2.5, shape="spline"),
-                    marker=dict(size=8, color=line_col,
+                    line=dict(color=line_col, width=3, shape="spline"),
+                    marker=dict(size=9, color=line_col,
                                 line=dict(width=2, color=COLORS["bg_secondary"])),
                     fill="tozeroy",
                     fillcolor=fill_col,
@@ -582,11 +589,20 @@ with tab_verlauf:
                     plot_bgcolor=COLORS["bg_secondary"],
                     font=dict(color=COLORS["text_secondary"], family="Inter", size=11),
                     margin=dict(l=8, r=8, t=44, b=8),
-                    xaxis=dict(type="date", gridcolor=COLORS["border"],
-                               linecolor=COLORS["border"], tickfont=dict(size=9),
-                               tickformat="%d.%m."),
-                    yaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"],
-                               ticksuffix=y_suffix, tickfont=dict(size=9)),
+                    xaxis=dict(
+                        type="date",
+                        gridcolor=COLORS["border"],
+                        linecolor=COLORS["border"],
+                        tickfont=dict(size=9),
+                        tickformat="%d.%m.",
+                    ),
+                    yaxis=dict(
+                        gridcolor=COLORS["border"],
+                        linecolor=COLORS["border"],
+                        ticksuffix=y_suffix,
+                        tickfont=dict(size=9),
+                        range=[y_lo, y_hi],
+                    ),
                     showlegend=False,
                     hovermode="x unified",
                     height=230,
