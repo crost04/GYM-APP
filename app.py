@@ -368,7 +368,7 @@ with tab_train:
                             w = st.number_input(
                                 f"Gewicht (kg)",
                                 min_value=0.0, max_value=500.0,
-                                value=float(default_w), step=2.5, format="%.1f",
+                                value=float(default_w), step=0.25, format="%.2f",
                                 key=f"{ex_name}_wu{i}_w",
                                 label_visibility="collapsed" if i > 1 else "visible",
                             )
@@ -423,7 +423,7 @@ with tab_train:
                                 w = st.number_input(
                                     "kg",
                                     min_value=0.0, max_value=500.0,
-                                    value=float(default_w), step=2.5, format="%.1f",
+                                    value=float(default_w), step=0.25, format="%.2f",
                                     key=f"{ex_name}_ws{i}_w",
                                 )
                             with col_r:
