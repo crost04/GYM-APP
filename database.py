@@ -240,7 +240,7 @@ def run_migrations() -> None:
                 "SELECT value FROM app_settings WHERE key='migration_arme_v3'")
             if not already:
                 plan_row = _fetchone(conn,
-                    "SELECT id FROM training_plans WHERE name LIKE 'Arme%'")
+                    "SELECT id FROM training_plans WHERE name LIKE %s", ("Arme%",))
                 if plan_row:
                     plan_id = plan_row["id"]
                     _execute(conn,
@@ -279,7 +279,7 @@ def force_update_arme_plan() -> str:
     try:
         with get_connection() as conn:
             plan_row = _fetchone(conn,
-                "SELECT id FROM training_plans WHERE name LIKE 'Arme%'")
+                "SELECT id FROM training_plans WHERE name LIKE %s", ("Arme%",))
             if not plan_row:
                 return "❌ Arme-Plan nicht gefunden!"
             plan_id = int(plan_row["id"])
