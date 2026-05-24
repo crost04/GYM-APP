@@ -218,9 +218,9 @@ with tab_train:
     # --- Einmaliger Fix-Button für Arme-Plan ---
     if st.button("🔧 Arme-Plan aktualisieren", key="fix_arme"):
         result = db.force_update_arme_plan()
-        db.get_plan_exercises.clear()
-        st.success(result)
-        st.rerun()
+        st.session_state["arme_fix_result"] = result
+    if "arme_fix_result" in st.session_state:
+        st.success(st.session_state["arme_fix_result"])
 
     # --- Plan-Auswahl (große Buttons) ---
     if "selected_plan" not in st.session_state:
