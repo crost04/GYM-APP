@@ -206,7 +206,7 @@ st.markdown(f'<div style="height:1px;background:linear-gradient(90deg,transparen
 # Tabs
 # ---------------------------------------------------------------------------
 
-tab_train, tab_verlauf, tab_gewicht = st.tabs(["🏋️  Training", "📊  Verlauf", "⚖️  Gewicht"])
+tab_train, tab_verlauf, tab_gewicht, tab_plaene = st.tabs(["🏋️  Training", "📊  Verlauf", "⚖️  Gewicht", "⚙️  Pläne"])
 
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
@@ -985,3 +985,119 @@ with tab_gewicht:
             f'Trag oben ein Zielgewicht ein, um deine Prognose zu sehen. 🎯</div>',
             unsafe_allow_html=True,
         )
+
+
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║  TAB 4 – PLAN-EDITOR                                                     ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+
+with tab_plaene:
+
+    st.markdown(
+        f'<div style="color:{COLORS["text_secondary"]};font-size:0.8rem;font-weight:700;'
+        f'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:16px;">'
+        f'Trainingsplan bearbeiten</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Plan auswählen
+    all_plans = db.get_all_plans()
+    selected_edit_plan = st.selectbox(
+        "Plan wählen",
+        options=all_plans,
+        key="editor_plan_select",
+    )
+
+    if selected_edit_plan:
+        exercises = db.get_plan_exercises(selected_edit_plan)
+
+        st.markdown(
+            f'<div style="color:{COLORS["text_muted"]};font-size:0.72rem;font-weight:700;'
+            f'text-transform:uppercase;letter-spacing:0.07em;margin:14px 0 8px 0;">'
+            f'{len(exercises)} Übungen</div>',
+            unsafe_allow_html=True,
+        )
+
+        # ── Bestehende Übungen ────────────────────────────────────────────
+        for ex in exercises:
+            ex_name = ex["exercise_name"]
+            with st.container():
+                st.markdown(
+                    f'<div style="background:{COLORS["bg_secondary"]};border:1px solid {COLORS["border"]};'
+                    f'border-radius:14px;padding:12px 14px 8px 14px;margin-bottom:8px;">'
+                    f'<div style="font-size:0.92rem;font-weight:800;color:{COLORS["text_primary"]};'
+                    f'margin-bottom:10px;">{ex_name}</div></div>',
+                    unsafe_allow_html=True,
+                )
+
+                col_wu, col_ws, col_up, col_down, col_del = st.columns([2, 2, 1, 1, 1])
+
+                with col_wu:
+                    new_wu = st.number_input(
+                        "Aufwärm",
+                        min_value=0, max_value=5,
+                        value=int(ex["warmup_sets"]),
+                        step=1,
+                        key=f"ed_wu_{selected_edit_plan}_{ex_name}",
+                    )
+                with col_ws:
+                    new_ws = st.number_input(
+                        "Arbeit",
+                        min_value=1, max_value=10,
+                        value=int(ex["working_sets"]),
+                        step=1,
+                        key=f"ed_ws_{selected_edit_plan}_{ex_name}",
+                    )
+                with col_up:
+                    st.markdown('<div style="padding-top:24px;"></div>', unsafe_allow_html=True)
+                    if st.button("↑", key=f"up_{selected_edit_plan}_{ex_name}", use_container_width=True):
+                        db.move_exercise(selected_edit_plan, ex_name, "up")
+                        st.rerun()
+                with col_down:
+                    st.markdown('<div style="padding-top:24px;"></div>', unsafe_allow_html=True)
+                    if st.button("↓", key=f"dn_{selected_edit_plan}_{ex_name}", use_container_width=True):
+                        db.move_exercise(selected_edit_plan, ex_name, "down")
+                        st.rerun()
+                with col_del:
+                    st.markdown('<div style="padding-top:24px;"></div>', unsafe_allow_html=True)
+                    if st.button("🗑", key=f"del_{selected_edit_plan}_{ex_name}", use_container_width=True):
+                        db.remove_exercise_from_plan(selected_edit_plan, ex_name)
+                        st.rerun()
+
+                # Sätze speichern wenn geändert
+                if new_wu != int(ex["warmup_sets"]) or new_ws != int(ex["working_sets"]):
+                    db.update_exercise_sets(selected_edit_plan, ex_name, new_wu, new_ws)
+
+        st.markdown('<div style="height:8px;"></div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="height:1px;background:{COLORS["border"]};margin:8px 0 16px 0;"></div>',
+            unsafe_allow_html=True,
+        )
+
+        # ── Neue Übung hinzufügen ─────────────────────────────────────────
+        st.markdown(
+            f'<div style="color:{COLORS["text_secondary"]};font-size:0.78rem;font-weight:700;'
+            f'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">'
+            f'➕ Neue Übung</div>',
+            unsafe_allow_html=True,
+        )
+
+        with st.form(key=f"add_exercise_{selected_edit_plan}", clear_on_submit=True):
+            new_name = st.text_input(
+                "Übungsname",
+                placeholder="z.B. Bizeps Curls Maschine",
+                key=f"new_ex_name_{selected_edit_plan}",
+            )
+            col_a, col_b = st.columns(2)
+            with col_a:
+                add_wu = st.number_input("Aufwärmsätze", min_value=0, max_value=5, value=1, step=1)
+            with col_b:
+                add_ws = st.number_input("Arbeitssätze",  min_value=1, max_value=10, value=3, step=1)
+
+            if st.form_submit_button("➕ Hinzufügen", use_container_width=True):
+                if new_name.strip():
+                    db.add_exercise_to_plan(selected_edit_plan, new_name.strip(), add_wu, add_ws)
+                    st.success(f"✅ '{new_name.strip()}' hinzugefügt!")
+                    st.rerun()
+                else:
+                    st.warning("Bitte einen Namen eingeben.")

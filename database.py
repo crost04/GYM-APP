@@ -326,6 +326,94 @@ def get_plan_exercises(plan_name: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Plan-Editor – Übungen verwalten
+# ---------------------------------------------------------------------------
+
+def _get_plan_id(conn, plan_name: str) -> int | None:
+    row = _fetchone(conn,
+        "SELECT id FROM training_plans WHERE name = %s", (plan_name,))
+    return int(row["id"]) if row else None
+
+
+def add_exercise_to_plan(plan_name: str, exercise_name: str,
+                         warmup_sets: int = 1, working_sets: int = 3) -> None:
+    """Fügt eine neue Übung ans Ende des Plans hinzu."""
+    with get_connection() as conn:
+        plan_id = _get_plan_id(conn, plan_name)
+        if not plan_id:
+            return
+        row = _fetchone(conn,
+            "SELECT COALESCE(MAX(sort_order), -1) AS max_ord FROM plan_exercises WHERE plan_id=%s",
+            (plan_id,))
+        next_ord = int(row["max_ord"]) + 1
+        _execute(conn,
+            """INSERT INTO plan_exercises
+               (plan_id, exercise_name, sort_order, warmup_sets, working_sets)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (plan_id, exercise_name.strip(), next_ord, warmup_sets, working_sets))
+    get_plan_exercises.clear()
+
+
+def remove_exercise_from_plan(plan_name: str, exercise_name: str) -> None:
+    """Entfernt eine Übung aus dem Plan."""
+    with get_connection() as conn:
+        plan_id = _get_plan_id(conn, plan_name)
+        if not plan_id:
+            return
+        _execute(conn,
+            "DELETE FROM plan_exercises WHERE plan_id=%s AND exercise_name=%s",
+            (plan_id, exercise_name))
+        # sort_order neu nummerieren
+        rows = _fetchall(conn,
+            "SELECT id FROM plan_exercises WHERE plan_id=%s ORDER BY sort_order ASC",
+            (plan_id,))
+        for idx, r in enumerate(rows):
+            _execute(conn,
+                "UPDATE plan_exercises SET sort_order=%s WHERE id=%s",
+                (idx, r["id"]))
+    get_plan_exercises.clear()
+
+
+def update_exercise_sets(plan_name: str, exercise_name: str,
+                         warmup_sets: int, working_sets: int) -> None:
+    """Ändert Aufwärm- und Arbeitssätze einer Übung."""
+    with get_connection() as conn:
+        plan_id = _get_plan_id(conn, plan_name)
+        if not plan_id:
+            return
+        _execute(conn,
+            """UPDATE plan_exercises
+               SET warmup_sets=%s, working_sets=%s
+               WHERE plan_id=%s AND exercise_name=%s""",
+            (warmup_sets, working_sets, plan_id, exercise_name))
+    get_plan_exercises.clear()
+
+
+def move_exercise(plan_name: str, exercise_name: str, direction: str) -> None:
+    """Verschiebt eine Übung um eine Position nach oben oder unten."""
+    with get_connection() as conn:
+        plan_id = _get_plan_id(conn, plan_name)
+        if not plan_id:
+            return
+        rows = _fetchall(conn,
+            "SELECT id, exercise_name, sort_order FROM plan_exercises WHERE plan_id=%s ORDER BY sort_order ASC",
+            (plan_id,))
+        names = [r["exercise_name"] for r in rows]
+        if exercise_name not in names:
+            return
+        idx = names.index(exercise_name)
+        swap_idx = idx - 1 if direction == "up" else idx + 1
+        if swap_idx < 0 or swap_idx >= len(rows):
+            return
+        # Tausche sort_order
+        id_a, ord_a = rows[idx]["id"],      rows[idx]["sort_order"]
+        id_b, ord_b = rows[swap_idx]["id"], rows[swap_idx]["sort_order"]
+        _execute(conn, "UPDATE plan_exercises SET sort_order=%s WHERE id=%s", (ord_b, id_a))
+        _execute(conn, "UPDATE plan_exercises SET sort_order=%s WHERE id=%s", (ord_a, id_b))
+    get_plan_exercises.clear()
+
+
+# ---------------------------------------------------------------------------
 # Workout loggen
 # ---------------------------------------------------------------------------
 
