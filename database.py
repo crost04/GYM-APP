@@ -267,22 +267,34 @@ def run_migrations() -> None:
 
 def force_update_arme_plan() -> str:
     """Löscht und ersetzt alle Übungen des Arme-Plans. Gibt Status-String zurück."""
+    new_exercises = [
+        ("Preacher Curls Kurzhantel", 1, 3),
+        ("Bizeps Kabel Curls",        1, 3),
+        ("Hammer Curls",              1, 3),
+        ("Trizeps über Kreuz Kabel",  1, 3),
+        ("Trizeps über Kopf",         1, 3),
+        ("Trizeps drücken Kabel",     1, 3),
+        ("Butterfly Reverse",         1, 3),
+    ]
     try:
         with get_connection() as conn:
             plan_row = _fetchone(conn,
-                "SELECT id, name FROM training_plans WHERE name LIKE 'Arme%'")
+                "SELECT id FROM training_plans WHERE name LIKE 'Arme%'")
             if not plan_row:
                 return "❌ Arme-Plan nicht gefunden!"
-            plan_id = plan_row["id"]
-            _execute(conn, "DELETE FROM plan_exercises WHERE plan_id=%s", (plan_id,))
-            new_exercises = PLAN_SEED["Arme 💪"]
-            _executemany(conn,
-                """INSERT INTO plan_exercises
-                   (plan_id, exercise_name, sort_order, warmup_sets, working_sets)
-                   VALUES (%s, %s, %s, %s, %s)""",
-                [(plan_id, name, idx, wu, ws)
-                 for idx, (name, wu, ws) in enumerate(new_exercises)]
-            )
+            plan_id = int(plan_row["id"])
+            _execute(conn,
+                "DELETE FROM plan_exercises WHERE plan_id=%s", (plan_id,))
+            for sort_order, exercise in enumerate(new_exercises):
+                ex_name   = exercise[0]
+                ex_warmup = exercise[1]
+                ex_work   = exercise[2]
+                _execute(conn,
+                    """INSERT INTO plan_exercises
+                       (plan_id, exercise_name, sort_order, warmup_sets, working_sets)
+                       VALUES (%s, %s, %s, %s, %s)""",
+                    (plan_id, ex_name, sort_order, ex_warmup, ex_work)
+                )
             return f"✅ Arme-Plan aktualisiert! ({len(new_exercises)} Übungen)"
     except Exception as e:
         return f"❌ Fehler: {e}"
