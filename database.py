@@ -335,6 +335,11 @@ def _get_plan_id(conn, plan_name: str) -> int | None:
     return int(row["id"]) if row else None
 
 
+def _clear_plan_cache() -> None:
+    """Leert den Streamlit-Cache für Plan-Daten."""
+    st.cache_data.clear()
+
+
 def add_exercise_to_plan(plan_name: str, exercise_name: str,
                          warmup_sets: int = 1, working_sets: int = 3) -> None:
     """Fügt eine neue Übung ans Ende des Plans hinzu."""
@@ -351,7 +356,7 @@ def add_exercise_to_plan(plan_name: str, exercise_name: str,
                (plan_id, exercise_name, sort_order, warmup_sets, working_sets)
                VALUES (%s, %s, %s, %s, %s)""",
             (plan_id, exercise_name.strip(), next_ord, warmup_sets, working_sets))
-    get_plan_exercises.clear()
+    _clear_plan_cache()
 
 
 def remove_exercise_from_plan(plan_name: str, exercise_name: str) -> None:
@@ -363,7 +368,6 @@ def remove_exercise_from_plan(plan_name: str, exercise_name: str) -> None:
         _execute(conn,
             "DELETE FROM plan_exercises WHERE plan_id=%s AND exercise_name=%s",
             (plan_id, exercise_name))
-        # sort_order neu nummerieren
         rows = _fetchall(conn,
             "SELECT id FROM plan_exercises WHERE plan_id=%s ORDER BY sort_order ASC",
             (plan_id,))
@@ -371,7 +375,7 @@ def remove_exercise_from_plan(plan_name: str, exercise_name: str) -> None:
             _execute(conn,
                 "UPDATE plan_exercises SET sort_order=%s WHERE id=%s",
                 (idx, r["id"]))
-    get_plan_exercises.clear()
+    _clear_plan_cache()
 
 
 def update_exercise_sets(plan_name: str, exercise_name: str,
@@ -386,7 +390,7 @@ def update_exercise_sets(plan_name: str, exercise_name: str,
                SET warmup_sets=%s, working_sets=%s
                WHERE plan_id=%s AND exercise_name=%s""",
             (warmup_sets, working_sets, plan_id, exercise_name))
-    get_plan_exercises.clear()
+    _clear_plan_cache()
 
 
 def move_exercise(plan_name: str, exercise_name: str, direction: str) -> None:
@@ -405,12 +409,13 @@ def move_exercise(plan_name: str, exercise_name: str, direction: str) -> None:
         swap_idx = idx - 1 if direction == "up" else idx + 1
         if swap_idx < 0 or swap_idx >= len(rows):
             return
-        # Tausche sort_order
-        id_a, ord_a = rows[idx]["id"],      rows[idx]["sort_order"]
-        id_b, ord_b = rows[swap_idx]["id"], rows[swap_idx]["sort_order"]
+        id_a  = int(rows[idx]["id"])
+        ord_a = int(rows[idx]["sort_order"])
+        id_b  = int(rows[swap_idx]["id"])
+        ord_b = int(rows[swap_idx]["sort_order"])
         _execute(conn, "UPDATE plan_exercises SET sort_order=%s WHERE id=%s", (ord_b, id_a))
         _execute(conn, "UPDATE plan_exercises SET sort_order=%s WHERE id=%s", (ord_a, id_b))
-    get_plan_exercises.clear()
+    _clear_plan_cache()
 
 
 # ---------------------------------------------------------------------------
