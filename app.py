@@ -215,13 +215,6 @@ tab_train, tab_verlauf, tab_gewicht = st.tabs(["🏋️  Training", "📊  Verla
 
 with tab_train:
 
-    # --- Einmaliger Fix-Button für Arme-Plan ---
-    if st.button("🔧 Arme-Plan aktualisieren", key="fix_arme"):
-        result = db.force_update_arme_plan()
-        st.session_state["arme_fix_result"] = result
-    if "arme_fix_result" in st.session_state:
-        st.success(st.session_state["arme_fix_result"])
-
     # --- Plan-Auswahl (große Buttons) ---
     if "selected_plan" not in st.session_state:
         # Fallback: letzten Plan aus DB laden (überlebt st.rerun() auf Cloud)
