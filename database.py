@@ -191,6 +191,22 @@ def init_db() -> None:
             )
         """)
 
+        # Körpermaße-Tabelle
+        _execute(conn, """
+            CREATE TABLE IF NOT EXISTS body_measurement_logs (
+                id               SERIAL PRIMARY KEY,
+                measurement_name TEXT NOT NULL,
+                value_cm         REAL NOT NULL CHECK(value_cm > 0),
+                log_date         DATE NOT NULL,
+                logged_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(measurement_name, log_date)
+            )
+        """)
+        _execute(conn, """
+            CREATE INDEX IF NOT EXISTS idx_bml_name_date
+                ON body_measurement_logs(measurement_name, log_date)
+        """)
+
         # Pläne einmalig seeden
         for sort_i, plan_name in enumerate(PLAN_ORDER):
             _execute(conn,
@@ -677,3 +693,105 @@ def reset_weight_logs() -> None:
         _execute(conn, "DELETE FROM weight_logs")
     get_weight_history.clear()
     get_last_two_weights.clear()
+
+
+# ---------------------------------------------------------------------------
+# Körpermaße
+# ---------------------------------------------------------------------------
+
+BODY_MEASUREMENTS = [
+    "Bauch",
+    "Taille",
+    "Brust",
+    "Hüfte",
+    "Bizeps (L)",
+    "Bizeps (R)",
+    "Oberschenkel (L)",
+    "Oberschenkel (R)",
+    "Wade (L)",
+    "Wade (R)",
+    "Schultern",
+]
+
+
+def init_body_measurements_table() -> None:
+    """Erstellt die Tabelle für Körpermaße (wird von init_db aufgerufen)."""
+    with get_connection() as conn:
+        _execute(conn, """
+            CREATE TABLE IF NOT EXISTS body_measurement_logs (
+                id               SERIAL PRIMARY KEY,
+                measurement_name TEXT NOT NULL,
+                value_cm         REAL NOT NULL CHECK(value_cm > 0),
+                log_date         DATE NOT NULL,
+                logged_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(measurement_name, log_date)
+            )
+        """)
+        _execute(conn, """
+            CREATE INDEX IF NOT EXISTS idx_bml_name_date
+                ON body_measurement_logs(measurement_name, log_date)
+        """)
+
+
+def log_body_measurements(measurements: dict[str, float], log_date: str | None = None) -> None:
+    """Speichert mehrere Maße auf einmal (UPSERT). measurements = {name: wert_cm}"""
+    if log_date is None:
+        ld = date.today()
+    else:
+        ld = date.fromisoformat(log_date)
+    now = datetime.now()
+
+    with get_connection() as conn:
+        for name, value in measurements.items():
+            if value and value > 0:
+                _execute(conn, """
+                    INSERT INTO body_measurement_logs (measurement_name, value_cm, log_date, logged_at)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (measurement_name, log_date) DO UPDATE
+                        SET value_cm = EXCLUDED.value_cm,
+                            logged_at = EXCLUDED.logged_at
+                """, (name, value, ld, now))
+
+    get_body_measurement_history.clear()
+    get_latest_body_measurements.clear()
+
+
+@st.cache_data(ttl=60)
+def get_latest_body_measurements() -> dict[str, dict]:
+    """Gibt für jedes Maß den neuesten Eintrag zurück: {name: {value_cm, log_date}}"""
+    with get_connection() as conn:
+        rows = _fetchall(conn, """
+            SELECT DISTINCT ON (measurement_name)
+                measurement_name, value_cm, log_date::text AS log_date
+            FROM body_measurement_logs
+            ORDER BY measurement_name, log_date DESC
+        """)
+    return {r["measurement_name"]: {"value_cm": r["value_cm"], "log_date": r["log_date"]} for r in rows}
+
+
+@st.cache_data(ttl=60)
+def get_body_measurement_history(measurement_name: str, weeks: int = 16) -> list[dict]:
+    """Verlauf eines einzelnen Maßes."""
+    since = date.today() - timedelta(weeks=weeks)
+    with get_connection() as conn:
+        rows = _fetchall(conn, """
+            SELECT log_date::text AS log_date, value_cm
+            FROM body_measurement_logs
+            WHERE measurement_name = %s AND log_date >= %s
+            ORDER BY log_date ASC
+        """, (measurement_name, since))
+    return rows
+
+
+@st.cache_data(ttl=60)
+def get_all_body_measurement_history(weeks: int = 16) -> list[dict]:
+    """Alle Maße als flache Liste – für Multi-Line-Chart."""
+    since = date.today() - timedelta(weeks=weeks)
+    with get_connection() as conn:
+        rows = _fetchall(conn, """
+            SELECT log_date::text AS log_date, measurement_name, value_cm
+            FROM body_measurement_logs
+            WHERE log_date >= %s
+            ORDER BY measurement_name, log_date ASC
+        """, (since,))
+    return rows

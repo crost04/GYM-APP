@@ -206,7 +206,7 @@ st.markdown(f'<div style="height:1px;background:linear-gradient(90deg,transparen
 # Tabs
 # ---------------------------------------------------------------------------
 
-tab_train, tab_verlauf, tab_gewicht, tab_plaene = st.tabs(["🏋️  Training", "📊  Verlauf", "⚖️  Gewicht", "⚙️  Pläne"])
+tab_train, tab_verlauf, tab_gewicht, tab_masse, tab_plaene = st.tabs(["🏋️  Training", "📊  Verlauf", "⚖️  Gewicht", "📏  Maße", "⚙️  Pläne"])
 
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
@@ -1004,7 +1004,172 @@ with tab_gewicht:
 
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
-# ║  TAB 4 – PLAN-EDITOR                                                     ║
+# ║  TAB 4 – KÖRPERMASSE                                                     ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+
+with tab_masse:
+    import pandas as _pd_m
+    from datetime import date as _date_m, timedelta as _td_m
+
+    latest_measurements = db.get_latest_body_measurements()
+
+    # ── Check-in Badge ────────────────────────────────────────────────────
+    _any_recent = any(
+        (_date_m.today() - _pd_m.to_datetime(v["log_date"]).date()).days <= 7
+        for v in latest_measurements.values()
+    ) if latest_measurements else False
+
+    if not latest_measurements:
+        _m_badge_color = COLORS["accent_blue"]
+        _m_badge_text  = "👋 Erste Maße eintragen und deinen Fortschritt starten!"
+    elif _any_recent:
+        _m_badge_color = COLORS["accent_green"]
+        _m_badge_text  = "✅ Diese Woche bereits gemessen – weiter so! 💪"
+    else:
+        _m_badge_color = COLORS["accent_orange"]
+        _m_badge_text  = "📏 Zeit für eine neue Messung – tracke deinen Fortschritt!"
+
+    st.markdown(
+        f'<div style="background:{_m_badge_color}18;border:1px solid {_m_badge_color}50;'
+        f'border-radius:14px;padding:10px 14px;margin-bottom:18px;'
+        f'color:{_m_badge_color};font-size:0.82rem;font-weight:700;">'
+        f'{_m_badge_text}</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Eingabe-Formular ──────────────────────────────────────────────────
+    st.markdown(
+        f'<div style="color:{COLORS["text_secondary"]};font-size:0.75rem;font-weight:700;'
+        f'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;">'
+        f'📏 Maße eintragen (cm)</div>',
+        unsafe_allow_html=True,
+    )
+
+    with st.form("body_measurements_form", clear_on_submit=False):
+        _inputs = {}
+        for _m_name in db.BODY_MEASUREMENTS:
+            _prev = latest_measurements.get(_m_name)
+            _prev_val  = float(_prev["value_cm"]) if _prev else 0.0
+            _prev_date = _prev["log_date"] if _prev else None
+            _label_suffix = f" (zuletzt: {_prev_val:.1f} cm am {_prev_date})" if _prev_date else ""
+
+            _inputs[_m_name] = st.number_input(
+                f"{_m_name}{_label_suffix}",
+                min_value=0.0, max_value=200.0,
+                value=_prev_val, step=0.5, format="%.1f",
+                key=f"meas_{_m_name}",
+            )
+
+        _m_submitted = st.form_submit_button("💾 ALLE MASSE SPEICHERN", use_container_width=True)
+
+    if _m_submitted:
+        _to_save = {k: v for k, v in _inputs.items() if v > 0}
+        if _to_save:
+            db.log_body_measurements(_to_save)
+            st.success("Maße gespeichert! Du wirst kleiner! 📉🔥")
+            st.rerun()
+        else:
+            st.warning("Bitte mindestens ein Maß eingeben.")
+
+    # ── Verlaufs-Charts ───────────────────────────────────────────────────
+    _hist_all = db.get_all_body_measurement_history(weeks=16)
+
+    if _hist_all:
+        st.markdown("---")
+        st.markdown(
+            f'<div style="color:{COLORS["text_secondary"]};font-size:0.75rem;font-weight:700;'
+            f'text-transform:uppercase;letter-spacing:0.08em;margin:12px 0;">'
+            f'📊 Verlauf (letzte 16 Wochen)</div>',
+            unsafe_allow_html=True,
+        )
+
+        # Welches Maß anzeigen?
+        _available_measures = sorted(set(r["measurement_name"] for r in _hist_all))
+        _selected_measure = st.selectbox(
+            "Maß auswählen",
+            _available_measures,
+            label_visibility="collapsed",
+        )
+
+        _hist_single = [r for r in _hist_all if r["measurement_name"] == _selected_measure]
+
+        if len(_hist_single) >= 1:
+            _df_m = _pd_m.DataFrame(_hist_single)
+            _df_m["log_date"] = _pd_m.to_datetime(_df_m["log_date"])
+            _df_m = _df_m.sort_values("log_date")
+
+            _first_val = float(_df_m["value_cm"].iloc[0])
+            _last_val  = float(_df_m["value_cm"].iloc[-1])
+            _delta_cm  = _last_val - _first_val
+            _delta_color = COLORS["accent_green"] if _delta_cm <= 0 else COLORS["accent_red"]
+
+            # Stat-Karten
+            _c1, _c2, _c3 = st.columns(3)
+            with _c1:
+                st.markdown(
+                    f'<div style="background:{COLORS["surface"]};border:1px solid {COLORS["border"]};'
+                    f'border-radius:14px;padding:12px;text-align:center;">'
+                    f'<div style="color:{COLORS["text_secondary"]};font-size:0.7rem;font-weight:700;'
+                    f'text-transform:uppercase;">Start</div>'
+                    f'<div style="color:{COLORS["text_primary"]};font-size:1.4rem;font-weight:800;">'
+                    f'{_first_val:.1f} cm</div></div>',
+                    unsafe_allow_html=True,
+                )
+            with _c2:
+                st.markdown(
+                    f'<div style="background:{COLORS["surface"]};border:1px solid {COLORS["border"]};'
+                    f'border-radius:14px;padding:12px;text-align:center;">'
+                    f'<div style="color:{COLORS["text_secondary"]};font-size:0.7rem;font-weight:700;'
+                    f'text-transform:uppercase;">Aktuell</div>'
+                    f'<div style="color:{COLORS["text_primary"]};font-size:1.4rem;font-weight:800;">'
+                    f'{_last_val:.1f} cm</div></div>',
+                    unsafe_allow_html=True,
+                )
+            with _c3:
+                _delta_label = f"{'▼' if _delta_cm <= 0 else '▲'} {abs(_delta_cm):.1f} cm"
+                st.markdown(
+                    f'<div style="background:{_delta_color}18;border:1px solid {_delta_color}50;'
+                    f'border-radius:14px;padding:12px;text-align:center;">'
+                    f'<div style="color:{COLORS["text_secondary"]};font-size:0.7rem;font-weight:700;'
+                    f'text-transform:uppercase;">Gesamt</div>'
+                    f'<div style="color:{_delta_color};font-size:1.4rem;font-weight:800;">'
+                    f'{_delta_label}</div></div>',
+                    unsafe_allow_html=True,
+                )
+
+            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+            # Linien-Chart
+            import altair as _alt_m
+            _chart_m = (
+                _alt_m.Chart(_df_m)
+                .mark_line(point=True, strokeWidth=3, color=COLORS["accent_blue"])
+                .encode(
+                    x=_alt_m.X("log_date:T", title=None, axis=_alt_m.Axis(labelColor=COLORS["text_secondary"], format="%d.%m")),
+                    y=_alt_m.Y("value_cm:Q", title="cm", scale=_alt_m.Scale(zero=False),
+                               axis=_alt_m.Axis(labelColor=COLORS["text_secondary"])),
+                    tooltip=[
+                        _alt_m.Tooltip("log_date:T", title="Datum", format="%d.%m.%Y"),
+                        _alt_m.Tooltip("value_cm:Q", title="cm", format=".1f"),
+                    ],
+                )
+                .properties(height=220, background="transparent")
+                .configure_view(strokeWidth=0)
+                .configure_axis(grid=True, gridColor=COLORS["border"], domainColor=COLORS["border"])
+            )
+            st.altair_chart(_chart_m, use_container_width=True)
+
+    else:
+        st.markdown(
+            f'<div style="color:{COLORS["text_secondary"]};font-size:0.85rem;'
+            f'text-align:center;padding:30px 0;">Noch keine Verlaufsdaten vorhanden.<br>'
+            f'Trag deine ersten Maße ein! 📏</div>',
+            unsafe_allow_html=True,
+        )
+
+
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║  TAB 5 – PLAN-EDITOR                                                     ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 
 with tab_plaene:
