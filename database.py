@@ -703,19 +703,16 @@ BODY_MEASUREMENTS = [
     "Bauch",
     "Taille",
     "Brust",
-    "Hüfte",
     "Bizeps (L)",
     "Bizeps (R)",
     "Oberschenkel (L)",
     "Oberschenkel (R)",
-    "Wade (L)",
-    "Wade (R)",
     "Schultern",
 ]
 
 
-def init_body_measurements_table() -> None:
-    """Erstellt die Tabelle für Körpermaße (wird von init_db aufgerufen)."""
+def ensure_body_measurements_table() -> None:
+    """Erstellt die Tabelle für Körpermaße falls noch nicht vorhanden."""
     with get_connection() as conn:
         _execute(conn, """
             CREATE TABLE IF NOT EXISTS body_measurement_logs (
@@ -757,41 +754,51 @@ def log_body_measurements(measurements: dict[str, float], log_date: str | None =
 
 
 @st.cache_data(ttl=60)
-def get_latest_body_measurements() -> dict[str, dict]:
+def get_latest_body_measurements() -> dict:
     """Gibt für jedes Maß den neuesten Eintrag zurück: {name: {value_cm, log_date}}"""
-    with get_connection() as conn:
-        rows = _fetchall(conn, """
-            SELECT DISTINCT ON (measurement_name)
-                measurement_name, value_cm, log_date::text AS log_date
-            FROM body_measurement_logs
-            ORDER BY measurement_name, log_date DESC
-        """)
-    return {r["measurement_name"]: {"value_cm": r["value_cm"], "log_date": r["log_date"]} for r in rows}
+    try:
+        ensure_body_measurements_table()
+        with get_connection() as conn:
+            rows = _fetchall(conn, """
+                SELECT DISTINCT ON (measurement_name)
+                    measurement_name, value_cm, log_date::text AS log_date
+                FROM body_measurement_logs
+                ORDER BY measurement_name, log_date DESC
+            """)
+        return {r["measurement_name"]: {"value_cm": r["value_cm"], "log_date": r["log_date"]} for r in rows}
+    except Exception:
+        return {}
 
 
 @st.cache_data(ttl=60)
-def get_body_measurement_history(measurement_name: str, weeks: int = 16) -> list[dict]:
+def get_body_measurement_history(measurement_name: str, weeks: int = 16) -> list:
     """Verlauf eines einzelnen Maßes."""
-    since = date.today() - timedelta(weeks=weeks)
-    with get_connection() as conn:
-        rows = _fetchall(conn, """
-            SELECT log_date::text AS log_date, value_cm
-            FROM body_measurement_logs
-            WHERE measurement_name = %s AND log_date >= %s
-            ORDER BY log_date ASC
-        """, (measurement_name, since))
-    return rows
+    try:
+        since = date.today() - timedelta(weeks=weeks)
+        with get_connection() as conn:
+            rows = _fetchall(conn, """
+                SELECT log_date::text AS log_date, value_cm
+                FROM body_measurement_logs
+                WHERE measurement_name = %s AND log_date >= %s
+                ORDER BY log_date ASC
+            """, (measurement_name, since))
+        return rows
+    except Exception:
+        return []
 
 
 @st.cache_data(ttl=60)
-def get_all_body_measurement_history(weeks: int = 16) -> list[dict]:
+def get_all_body_measurement_history(weeks: int = 16) -> list:
     """Alle Maße als flache Liste – für Multi-Line-Chart."""
-    since = date.today() - timedelta(weeks=weeks)
-    with get_connection() as conn:
-        rows = _fetchall(conn, """
-            SELECT log_date::text AS log_date, measurement_name, value_cm
-            FROM body_measurement_logs
-            WHERE log_date >= %s
-            ORDER BY measurement_name, log_date ASC
-        """, (since,))
-    return rows
+    try:
+        since = date.today() - timedelta(weeks=weeks)
+        with get_connection() as conn:
+            rows = _fetchall(conn, """
+                SELECT log_date::text AS log_date, measurement_name, value_cm
+                FROM body_measurement_logs
+                WHERE log_date >= %s
+                ORDER BY measurement_name, log_date ASC
+            """, (since,))
+        return rows
+    except Exception:
+        return []

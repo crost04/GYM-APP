@@ -1073,17 +1073,17 @@ with tab_masse:
 
     # ── Verlaufs-Charts ───────────────────────────────────────────────────
     _hist_all = db.get_all_body_measurement_history(weeks=16)
+    import altair as _alt_m
 
     if _hist_all:
         st.markdown("---")
         st.markdown(
             f'<div style="color:{COLORS["text_secondary"]};font-size:0.75rem;font-weight:700;'
             f'text-transform:uppercase;letter-spacing:0.08em;margin:12px 0;">'
-            f'📊 Verlauf (letzte 16 Wochen)</div>',
+            f'📊 Maß-Verlauf (letzte 16 Wochen)</div>',
             unsafe_allow_html=True,
         )
 
-        # Welches Maß anzeigen?
         _available_measures = sorted(set(r["measurement_name"] for r in _hist_all))
         _selected_measure = st.selectbox(
             "Maß auswählen",
@@ -1103,7 +1103,6 @@ with tab_masse:
             _delta_cm  = _last_val - _first_val
             _delta_color = COLORS["accent_green"] if _delta_cm <= 0 else COLORS["accent_red"]
 
-            # Stat-Karten
             _c1, _c2, _c3 = st.columns(3)
             with _c1:
                 st.markdown(
@@ -1139,25 +1138,132 @@ with tab_masse:
 
             st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
-            # Linien-Chart
-            import altair as _alt_m
             _chart_m = (
                 _alt_m.Chart(_df_m)
                 .mark_line(point=True, strokeWidth=3, color=COLORS["accent_blue"])
                 .encode(
-                    x=_alt_m.X("log_date:T", title=None, axis=_alt_m.Axis(labelColor=COLORS["text_secondary"], format="%d.%m")),
+                    x=_alt_m.X("log_date:T", title=None,
+                                axis=_alt_m.Axis(labelColor=COLORS["text_secondary"], format="%d.%m")),
                     y=_alt_m.Y("value_cm:Q", title="cm", scale=_alt_m.Scale(zero=False),
-                               axis=_alt_m.Axis(labelColor=COLORS["text_secondary"])),
+                                axis=_alt_m.Axis(labelColor=COLORS["text_secondary"])),
                     tooltip=[
                         _alt_m.Tooltip("log_date:T", title="Datum", format="%d.%m.%Y"),
                         _alt_m.Tooltip("value_cm:Q", title="cm", format=".1f"),
                     ],
                 )
-                .properties(height=220, background="transparent")
+                .properties(height=200, background="transparent")
                 .configure_view(strokeWidth=0)
                 .configure_axis(grid=True, gridColor=COLORS["border"], domainColor=COLORS["border"])
             )
             st.altair_chart(_chart_m, use_container_width=True)
+
+        # ── Waage-Kompensations-Graph ─────────────────────────────────────
+        st.markdown("---")
+        st.markdown(
+            f'<div style="color:{COLORS["text_secondary"]};font-size:0.75rem;font-weight:700;'
+            f'text-transform:uppercase;letter-spacing:0.08em;margin:12px 0;">'
+            f'⚖️ Waage-Kompensations-Graph</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f'<div style="color:{COLORS["text_muted"]};font-size:0.78rem;margin-bottom:12px;">'
+            f'Körpergewicht (🔴) vs. Umfang (🔵) im Vergleich – beide sollten sinken.</div>',
+            unsafe_allow_html=True,
+        )
+
+        _weight_hist = db.get_weight_history(weeks=16)
+
+        if _weight_hist and _hist_single:
+            _df_w = _pd_m.DataFrame(_weight_hist)
+            _df_w["log_date"] = _pd_m.to_datetime(_df_w["log_date"])
+            _df_w = _df_w.sort_values("log_date").rename(columns={"weight_kg": "wert"})
+            _df_w["typ"] = "Gewicht (kg)"
+
+            _df_comp = _pd_m.DataFrame(_hist_single)
+            _df_comp["log_date"] = _pd_m.to_datetime(_df_comp["log_date"])
+            _df_comp = _df_comp.sort_values("log_date").rename(columns={"value_cm": "wert"})
+            _df_comp["typ"] = f"{_selected_measure} (cm)"
+
+            # Normalisierung auf 0–100 für gemeinsame Achse
+            def _normalize(series):
+                mn, mx = series.min(), series.max()
+                if mx == mn:
+                    return _pd_m.Series([50.0] * len(series), index=series.index)
+                return (series - mn) / (mx - mn) * 100
+
+            _df_w["normiert"]    = _normalize(_df_w["wert"])
+            _df_comp["normiert"] = _normalize(_df_comp["wert"])
+            _df_kombi = _pd_m.concat([_df_w[["log_date","typ","wert","normiert"]],
+                                       _df_comp[["log_date","typ","wert","normiert"]]])
+
+            _color_scale = _alt_m.Scale(
+                domain=["Gewicht (kg)", f"{_selected_measure} (cm)"],
+                range=[COLORS["accent_red"], COLORS["accent_blue"]],
+            )
+
+            _base = _alt_m.Chart(_df_kombi).encode(
+                x=_alt_m.X("log_date:T", title=None,
+                            axis=_alt_m.Axis(labelColor=COLORS["text_secondary"], format="%d.%m")),
+                color=_alt_m.Color("typ:N", scale=_color_scale,
+                                   legend=_alt_m.Legend(
+                                       orient="bottom", labelColor=COLORS["text_secondary"],
+                                       titleColor=COLORS["text_secondary"],
+                                       labelFontSize=11, symbolSize=80,
+                                   )),
+                tooltip=[
+                    _alt_m.Tooltip("log_date:T", title="Datum", format="%d.%m.%Y"),
+                    _alt_m.Tooltip("typ:N", title="Messung"),
+                    _alt_m.Tooltip("wert:Q", title="Wert", format=".1f"),
+                ],
+            )
+
+            _line  = _base.mark_line(strokeWidth=2.5).encode(
+                y=_alt_m.Y("normiert:Q", title="Normiert (0–100)",
+                            scale=_alt_m.Scale(domain=[0, 100], zero=False),
+                            axis=_alt_m.Axis(labelColor=COLORS["text_secondary"])),
+            )
+            _point = _base.mark_point(size=60, filled=True).encode(
+                y=_alt_m.Y("normiert:Q", scale=_alt_m.Scale(domain=[0, 100])),
+            )
+
+            _kombi_chart = (
+                (_line + _point)
+                .properties(height=230, background="transparent")
+                .configure_view(strokeWidth=0)
+                .configure_axis(grid=True, gridColor=COLORS["border"], domainColor=COLORS["border"])
+            )
+            st.altair_chart(_kombi_chart, use_container_width=True)
+
+            # Trend-Analyse
+            if len(_df_w) >= 2 and len(_df_comp) >= 2:
+                _w_trend  = float(_df_w["wert"].iloc[-1])  - float(_df_w["wert"].iloc[0])
+                _m_trend  = float(_df_comp["wert"].iloc[-1]) - float(_df_comp["wert"].iloc[0])
+                if _w_trend < 0 and _m_trend < 0:
+                    _trend_msg   = f"🔥 Gewicht -{abs(_w_trend):.1f} kg UND {_selected_measure} -{abs(_m_trend):.1f} cm – du verlierst Fett, nicht Muskeln! Perfekt!"
+                    _trend_color = COLORS["accent_green"]
+                elif _w_trend < 0 and _m_trend >= 0:
+                    _trend_msg   = f"⚠️ Gewicht sinkt, aber {_selected_measure} wächst – prüf deine Ernährung!"
+                    _trend_color = COLORS["accent_orange"]
+                elif _w_trend >= 0 and _m_trend < 0:
+                    _trend_msg   = f"💪 {_selected_measure} sinkt trotz Gewichtszunahme – möglicher Muskelaufbau!"
+                    _trend_color = COLORS["accent_blue"]
+                else:
+                    _trend_msg   = "📊 Noch keine klare Veränderung – dran bleiben!"
+                    _trend_color = COLORS["text_secondary"]
+
+                st.markdown(
+                    f'<div style="background:{_trend_color}18;border:1px solid {_trend_color}50;'
+                    f'border-radius:14px;padding:10px 14px;margin-top:8px;'
+                    f'color:{_trend_color};font-size:0.82rem;font-weight:700;">'
+                    f'{_trend_msg}</div>',
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.markdown(
+                f'<div style="color:{COLORS["text_muted"]};font-size:0.82rem;text-align:center;padding:16px 0;">'
+                f'Trag Gewicht im ⚖️ Gewicht-Tab ein, um den Kompensations-Graph zu sehen.</div>',
+                unsafe_allow_html=True,
+            )
 
     else:
         st.markdown(
