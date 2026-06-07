@@ -644,6 +644,7 @@ def log_body_weight(weight_kg: float, log_date: str | None = None) -> None:
     # Cache nach Schreibvorgang leeren
     get_weight_history.clear()
     get_last_two_weights.clear()
+    get_weekly_weight_averages.clear()
 
 
 def get_setting(key: str) -> str | None:
@@ -685,6 +686,25 @@ def get_last_two_weights() -> tuple:
             LIMIT 2
         """)
     return (rows[0] if rows else None, rows[1] if len(rows) > 1 else None)
+
+
+@st.cache_data(ttl=60)
+def get_weekly_weight_averages(weeks: int = 16) -> list[dict]:
+    """Gibt den Ø-Gewicht pro Kalenderwoche zurück: {week_label, avg_weight, entries, week_start}"""
+    since = date.today() - timedelta(weeks=weeks)
+    with get_connection() as conn:
+        rows = _fetchall(conn, """
+            SELECT
+                TO_CHAR(log_date, 'IYYY-"W"IW') AS week_label,
+                DATE_TRUNC('week', log_date)::text AS week_start,
+                ROUND(CAST(AVG(weight_kg) AS numeric), 2) AS avg_weight,
+                COUNT(*) AS entries
+            FROM weight_logs
+            WHERE log_date >= %s
+            GROUP BY DATE_TRUNC('week', log_date), TO_CHAR(log_date, 'IYYY-"W"IW')
+            ORDER BY week_start ASC
+        """, (since,))
+    return rows
 
 
 def reset_weight_logs() -> None:

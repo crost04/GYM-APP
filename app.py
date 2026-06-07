@@ -679,21 +679,23 @@ with tab_gewicht:
     saved_start      = db.get_setting("start_weight")
     default_start    = float(saved_start) if saved_start else default_weight
 
-    # ── Wöchentlicher Check-in Status ──────────────────────────────────────
+    # ── Täglicher Check-in Status ──────────────────────────────────────────
     today = _date.today()
     if latest:
         last_date = _pd.to_datetime(latest["log_date"]).date()
         days_since = (today - last_date).days
-        # Gleiche ISO-Kalenderwoche?
-        same_week = (today.isocalendar()[:2] == last_date.isocalendar()[:2])
-        if same_week:
+        if days_since == 0:
             _badge_color = COLORS["accent_green"]
             _badge_icon  = "✅"
-            _badge_text  = f"Diese Woche bereits eingetragen · vor {days_since} Tag{'en' if days_since != 1 else ''}"
-        elif days_since <= 14:
+            _badge_text  = f"Heute bereits gewogen – weiter so! 💪"
+        elif days_since == 1:
             _badge_color = COLORS["accent_orange"]
             _badge_icon  = "⏰"
-            _badge_text  = f"Letzte Messung vor {days_since} Tagen – Zeit für den Wochen-Check-in!"
+            _badge_text  = "Gestern gewogen – heute noch eintragen!"
+        elif days_since <= 3:
+            _badge_color = COLORS["accent_orange"]
+            _badge_icon  = "⏰"
+            _badge_text  = f"Letzte Messung vor {days_since} Tagen – täglich wiegen für genaueren Schnitt!"
         else:
             _badge_color = COLORS["accent_red"]
             _badge_icon  = "🔴"
@@ -715,7 +717,7 @@ with tab_gewicht:
         st.markdown(
             f'<div style="color:{COLORS["text_secondary"]};font-size:0.75rem;font-weight:700;'
             f'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">'
-            f'⚖️ Wöchentliches Gewicht eintragen</div>',
+            f'⚖️ Tägliches Gewicht eintragen</div>',
             unsafe_allow_html=True,
         )
 
@@ -841,12 +843,12 @@ with tab_gewicht:
         df["date_str"] = df["log_date"].dt.strftime("%d.%m.")
         df = df.drop_duplicates(subset=["date_str"]).reset_index(drop=True)
 
-        # 4-Wochen Moving Average (sinnvoll bei wöchentlichen Messungen)
-        df["ma4w"] = df["weight_kg"].rolling(window=4, min_periods=1).mean()
+        # 7-Tage Moving Average (täglich messen)
+        df["ma7d"] = df["weight_kg"].rolling(window=7, min_periods=1).mean()
 
         dates_lbl = df["date_str"].tolist()
         weights   = df["weight_kg"].tolist()
-        ma4w      = df["ma4w"].round(2).tolist()
+        ma7d      = df["ma7d"].round(2).tolist()
 
         all_vals = weights + ([goal_kg] if goal_kg else [])
         y_min = round(min(all_vals) - 1.5, 1)
@@ -854,26 +856,26 @@ with tab_gewicht:
 
         fig = go.Figure()
 
-        # Wöchentliche Messpunkte als Linie + Marker
+        # Tägliche Messpunkte
         fig.add_trace(go.Scatter(
             x=dates_lbl, y=weights,
             mode="lines+markers",
-            name="Wochenmessung",
-            marker=dict(size=8, color=COLORS["accent_blue"],
+            name="Tagesmessung",
+            marker=dict(size=6, color=COLORS["accent_blue"],
                         line=dict(width=2, color=COLORS["bg_secondary"])),
-            line=dict(color=COLORS["accent_blue"], width=2, dash="dot"),
-            hovertemplate="<b>%{y:.1f} kg</b><br>%{x}<extra>Wochenmessung</extra>",
+            line=dict(color=COLORS["accent_blue"], width=1, dash="dot"),
+            hovertemplate="<b>%{y:.1f} kg</b><br>%{x}<extra>Tagesmessung</extra>",
         ))
 
-        # 4-Wochen-Trend als Hauptlinie
+        # 7-Tage-Trend als Hauptlinie
         if len(weights) >= 2:
             fig.add_trace(go.Scatter(
-                x=dates_lbl, y=ma4w,
+                x=dates_lbl, y=ma7d,
                 mode="lines",
-                name="Ø 4 Wochen",
+                name="Ø 7 Tage",
                 line=dict(color=COLORS["accent_green"], width=3, shape="spline"),
                 fill="tozeroy", fillcolor="rgba(0, 212, 255, 0.06)",
-                hovertemplate="<b>Ø %{y:.1f} kg</b><br>%{x}<extra>4-Wochen-Schnitt</extra>",
+                hovertemplate="<b>Ø %{y:.1f} kg</b><br>%{x}<extra>7-Tage-Schnitt</extra>",
             ))
 
         # Zielgewicht-Linie
@@ -890,7 +892,7 @@ with tab_gewicht:
             )
 
         fig.update_layout(
-            title=dict(text="⚖️ Wöchentlicher Gewichtsverlauf & Trend",
+            title=dict(text="⚖️ Täglicher Gewichtsverlauf & 7-Tage-Trend",
                        font=dict(size=13, color=COLORS["text_primary"]),
                        x=0, xanchor="left"),
             paper_bgcolor="rgba(0,0,0,0)",
@@ -912,6 +914,50 @@ with tab_gewicht:
             height=270,
         )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    # ── Wochendurchschnitte ────────────────────────────────────────────────
+    weekly_avgs = db.get_weekly_weight_averages(weeks=16)
+    if weekly_avgs:
+        st.markdown(
+            f'<div style="color:{COLORS["text_secondary"]};font-size:0.75rem;font-weight:700;'
+            f'text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 8px 0;">'
+            f'📅 Wochendurchschnitte</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f'<div style="border-radius:14px;overflow:hidden;border:1px solid {COLORS["border"]};">'
+            f'<div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:0;'
+            f'padding:8px 14px;background:{COLORS["bg_secondary"]};'
+            f'font-size:0.68rem;font-weight:700;text-transform:uppercase;'
+            f'letter-spacing:0.06em;color:{COLORS["text_muted"]};">'
+            f'<span>Woche</span><span>Ø Gewicht</span><span>Messungen</span></div>',
+            unsafe_allow_html=True,
+        )
+        for i, wa in enumerate(reversed(weekly_avgs)):
+            bg = COLORS["bg_secondary"] if i % 2 == 0 else COLORS["bg_primary"]
+            # Woche lesbar machen: 2025-W22 → KW 22/2025
+            try:
+                yr, wk = wa["week_label"].split("-W")
+                week_display = f"KW {int(wk)} / {yr}"
+            except Exception:
+                week_display = wa["week_label"]
+            entries_color = COLORS["accent_green"] if wa["entries"] >= 5 else COLORS["accent_orange"] if wa["entries"] >= 3 else COLORS["accent_red"]
+            st.markdown(
+                f'<div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:0;'
+                f'padding:9px 14px;background:{bg};border-top:1px solid {COLORS["border"]};'
+                f'font-size:0.84rem;align-items:center;">'
+                f'<span style="color:{COLORS["text_secondary"]};">{week_display}</span>'
+                f'<span style="color:{COLORS["accent_green"]};font-weight:800;">{wa["avg_weight"]:.1f} kg</span>'
+                f'<span style="color:{entries_color};font-weight:700;">{wa["entries"]}×</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="color:{COLORS["text_muted"]};font-size:0.7rem;margin-top:6px;margin-bottom:8px;">'
+            f'🟢 5–7 Messungen · 🟠 3–4 · 🔴 1–2 pro Woche</div>',
+            unsafe_allow_html=True,
+        )
 
     st.markdown("---")
 
@@ -1060,7 +1106,7 @@ with tab_masse:
                 key=f"meas_{_m_name}",
             )
 
-        _m_submitted = st.form_submit_button("💾 ALLE MASSE SPEICHERN", use_container_width=True)
+        _m_submitted = st.form_submit_button("💾 ALLE MAẞE SPEICHERN", use_container_width=True)
 
     if _m_submitted:
         _to_save = {k: v for k, v in _inputs.items() if v > 0}
@@ -1106,7 +1152,7 @@ with tab_masse:
             _c1, _c2, _c3 = st.columns(3)
             with _c1:
                 st.markdown(
-                    f'<div style="background:{COLORS["surface"]};border:1px solid {COLORS["border"]};'
+                    f'<div style="background:{COLORS["bg_secondary"]};border:1px solid {COLORS["border"]};'
                     f'border-radius:14px;padding:12px;text-align:center;">'
                     f'<div style="color:{COLORS["text_secondary"]};font-size:0.7rem;font-weight:700;'
                     f'text-transform:uppercase;">Start</div>'
@@ -1116,7 +1162,7 @@ with tab_masse:
                 )
             with _c2:
                 st.markdown(
-                    f'<div style="background:{COLORS["surface"]};border:1px solid {COLORS["border"]};'
+                    f'<div style="background:{COLORS["bg_secondary"]};border:1px solid {COLORS["border"]};'
                     f'border-radius:14px;padding:12px;text-align:center;">'
                     f'<div style="color:{COLORS["text_secondary"]};font-size:0.7rem;font-weight:700;'
                     f'text-transform:uppercase;">Aktuell</div>'
